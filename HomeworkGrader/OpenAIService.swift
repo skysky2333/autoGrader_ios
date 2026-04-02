@@ -464,14 +464,6 @@ private struct SimpleValidationPayload: Decodable {
     let ok: Bool
 }
 
-private extension JSONEncoder {
-    static var prettyPrinted: JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return encoder
-    }
-}
-
 private struct ModelPricing {
     let inputPerMTokensUSD: Double
     let cachedInputPerMTokensUSD: Double

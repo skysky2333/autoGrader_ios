@@ -195,6 +195,7 @@ private struct NewSessionSheet: View {
                     .disabled(!canCreate)
                 }
             }
+            .keyboardDismissToolbar()
         }
     }
 
@@ -324,6 +325,7 @@ private struct SettingsView: View {
                     }
                 }
             }
+            .keyboardDismissToolbar()
         }
     }
 
@@ -387,6 +389,7 @@ private struct SessionDetailView: View {
     @State private var showingMasterScanner = false
     @State private var showingStudentScanner = false
     @State private var selectedTab: SessionSectionTab = .overview
+    @State private var resultsSearchText = ""
     @State private var rubricReviewState: RubricReviewState?
     @State private var submissionDraft: SubmissionDraft?
     @State private var selectedSubmission: StudentSubmission?
@@ -506,12 +509,18 @@ private struct SessionDetailView: View {
             }
 
             if selectedTab == .results {
+                Section("Search") {
+                    TextField("Search by student name", text: $resultsSearchText)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+                }
+
                 Section("Saved Results") {
-                    if session.sortedSubmissions.isEmpty {
+                    if filteredSubmissions.isEmpty {
                         Text("No student submissions saved yet.")
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(session.sortedSubmissions) { submission in
+                        ForEach(filteredSubmissions) { submission in
                             Button {
                                 selectedSubmission = submission
                             } label: {
@@ -527,6 +536,13 @@ private struct SessionDetailView: View {
                         exportCSV()
                     } label: {
                         Label("Export Session CSV", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(session.sortedSubmissions.isEmpty)
+
+                    Button {
+                        exportPackage()
+                    } label: {
+                        Label("Export Full Session Package", systemImage: "archivebox")
                     }
                     .disabled(session.sortedSubmissions.isEmpty)
                 }
@@ -590,10 +606,19 @@ private struct SessionDetailView: View {
             }
         }
         .sheet(item: $submissionDraft) { draft in
-            SubmissionReviewView(draft: draft, integerPointsOnly: session.integerPointsOnlyEnabled) { approvedDraft in
-                saveSubmission(approvedDraft)
-                submissionDraft = nil
-            }
+            SubmissionReviewView(
+                draft: draft,
+                integerPointsOnly: session.integerPointsOnlyEnabled,
+                onSave: { approvedDraft in
+                    saveSubmission(approvedDraft)
+                    submissionDraft = nil
+                },
+                onSaveAndScanNext: { approvedDraft in
+                    saveSubmission(approvedDraft)
+                    submissionDraft = nil
+                    startStudentScan()
+                }
+            )
         }
         .sheet(item: $selectedSubmission) { submission in
             SavedSubmissionDetailView(submission: submission)
@@ -617,6 +642,7 @@ private struct SessionDetailView: View {
                 BusyOverlay(message: busyMessage)
             }
         }
+        .keyboardDismissToolbar()
     }
 
     private var hasAPIKey: Bool {
@@ -779,6 +805,14 @@ private struct SessionDetailView: View {
         }
     }
 
+    private func exportPackage() {
+        do {
+            shareItem = ShareItem(url: try SessionExporter.temporaryPackageURL(for: session))
+        } catch {
+            alertItem = AlertItem(message: "Unable to export the full session package. \(error.localizedDescription)")
+        }
+    }
+
     private func recordUsage(_ usage: OpenAIUsageSummary?, apiKey: String) {
         guard let usage else { return }
 
@@ -810,11 +844,20 @@ private struct SessionDetailView: View {
         try? modelContext.save()
         dismiss()
     }
+
+    private var filteredSubmissions: [StudentSubmission] {
+        let trimmed = resultsSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return session.sortedSubmissions }
+        return session.sortedSubmissions.filter {
+            $0.studentName.localizedCaseInsensitiveContains(trimmed)
+        }
+    }
 }
 
 private struct AnswerKeyReviewView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var questionDrafts: [RubricQuestionDraft]
+    @State private var defaultPointsText = "1"
     let pageData: [Data]
     let integerPointsOnly: Bool
     let onApprove: ([RubricQuestionDraft]) -> Void
@@ -836,6 +879,16 @@ private struct AnswerKeyReviewView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                Section("Default Points") {
+                    TextField("Default points per question", text: $defaultPointsText)
+                        .keyboardType(integerPointsOnly ? .numberPad : .decimalPad)
+
+                    Button("Apply To All Questions") {
+                        applyDefaultPoints()
+                    }
+                    .disabled(PointPolicy.parse(defaultPointsText, integerOnly: integerPointsOnly) == nil)
+                }
+
                 ForEach($questionDrafts) { $draft in
                     Section(draft.displayLabel.isEmpty ? "Question" : draft.displayLabel) {
                         TextField("Question ID", text: $draft.questionID)
@@ -850,6 +903,7 @@ private struct AnswerKeyReviewView: View {
                                 .font(.footnote.weight(.semibold))
                             TextEditor(text: $draft.promptText)
                                 .frame(minHeight: 100)
+                            RenderedTextBlock(text: draft.promptText)
                         }
 
                         VStack(alignment: .leading, spacing: 8) {
@@ -857,6 +911,7 @@ private struct AnswerKeyReviewView: View {
                                 .font(.footnote.weight(.semibold))
                             TextEditor(text: $draft.idealAnswer)
                                 .frame(minHeight: 120)
+                            RenderedTextBlock(text: draft.idealAnswer)
                         }
 
                         VStack(alignment: .leading, spacing: 8) {
@@ -864,6 +919,7 @@ private struct AnswerKeyReviewView: View {
                                 .font(.footnote.weight(.semibold))
                             TextEditor(text: $draft.gradingCriteria)
                                 .frame(minHeight: 120)
+                            RenderedTextBlock(text: draft.gradingCriteria)
                         }
 
                         TextField("Max points", text: $draft.maxPointsText)
@@ -887,6 +943,7 @@ private struct AnswerKeyReviewView: View {
                     .disabled(!canApprove)
                 }
             }
+            .keyboardDismissToolbar()
         }
     }
 
@@ -901,6 +958,16 @@ private struct AnswerKeyReviewView: View {
             PointPolicy.parse($0.maxPointsText, integerOnly: integerPointsOnly) != nil
         }
     }
+
+    private func applyDefaultPoints() {
+        guard let parsed = PointPolicy.parse(defaultPointsText, integerOnly: integerPointsOnly) else { return }
+        let display = PointPolicy.displayText(for: parsed, integerOnly: integerPointsOnly)
+        questionDrafts = questionDrafts.map { draft in
+            var copy = draft
+            copy.maxPointsText = display
+            return copy
+        }
+    }
 }
 
 private struct SubmissionReviewView: View {
@@ -908,11 +975,18 @@ private struct SubmissionReviewView: View {
     @State private var draft: SubmissionDraft
     let integerPointsOnly: Bool
     let onSave: (SubmissionDraft) -> Void
+    let onSaveAndScanNext: (SubmissionDraft) -> Void
 
-    init(draft: SubmissionDraft, integerPointsOnly: Bool, onSave: @escaping (SubmissionDraft) -> Void) {
+    init(
+        draft: SubmissionDraft,
+        integerPointsOnly: Bool,
+        onSave: @escaping (SubmissionDraft) -> Void,
+        onSaveAndScanNext: @escaping (SubmissionDraft) -> Void
+    ) {
         _draft = State(initialValue: draft.normalized(integerPointsOnly: integerPointsOnly))
         self.integerPointsOnly = integerPointsOnly
         self.onSave = onSave
+        self.onSaveAndScanNext = onSaveAndScanNext
     }
 
     var body: some View {
@@ -961,6 +1035,7 @@ private struct SubmissionReviewView: View {
                                 .font(.footnote.weight(.semibold))
                             TextEditor(text: $grade.feedback)
                                 .frame(minHeight: 100)
+                            RenderedTextBlock(text: grade.feedback)
                         }
                     }
                 }
@@ -968,6 +1043,7 @@ private struct SubmissionReviewView: View {
                 Section("Overall Notes") {
                     TextEditor(text: $draft.overallNotes)
                         .frame(minHeight: 120)
+                    RenderedTextBlock(text: draft.overallNotes)
                 }
             }
             .navigationTitle("Review Grade")
@@ -985,7 +1061,15 @@ private struct SubmissionReviewView: View {
                     }
                     .disabled(!canSave)
                 }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Save & Scan Next") {
+                        onSaveAndScanNext(normalizedDraft)
+                    }
+                    .disabled(!canSave)
+                }
             }
+            .keyboardDismissToolbar()
         }
     }
 
@@ -999,90 +1083,144 @@ private struct SubmissionReviewView: View {
 }
 
 private struct SavedSubmissionDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     let submission: StudentSubmission
+    let integerPointsOnly: Bool
+    @State private var draft: SubmissionDraft
+
+    init(submission: StudentSubmission) {
+        self.submission = submission
+        let integerOnly = submission.session?.integerPointsOnlyEnabled ?? false
+        self.integerPointsOnly = integerOnly
+        _draft = State(initialValue: SubmissionDraft.fromStoredSubmission(submission).normalized(integerPointsOnly: integerOnly))
+    }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Student") {
-                    LabeledContent("Name", value: submission.studentName)
-                    LabeledContent("Score", value: "\(ScoreFormatting.scoreString(submission.totalScore)) / \(ScoreFormatting.scoreString(submission.maxScore))")
+                    TextField("Student name", text: $draft.studentName)
+                        .textInputAutocapitalization(.words)
                     LabeledContent("Saved", value: submission.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    LabeledContent("Score", value: "\(ScoreFormatting.scoreString(draft.totalScore)) / \(ScoreFormatting.scoreString(draft.maxScore))")
                 }
 
-                if !submission.scans().isEmpty {
+                if !draft.pageData.isEmpty {
                     Section("Scanned Pages") {
-                        ImageStripView(pageData: submission.scans())
+                        ImageStripView(pageData: draft.pageData)
                     }
                 }
 
-                Section("Per Question") {
-                    ForEach(submission.questionGrades()) { grade in
+                ForEach($draft.grades) { $grade in
+                    Section(grade.displayLabel) {
+                        Stepper(value: $grade.awardedPoints, in: 0...grade.maxPoints, step: PointPolicy.step(integerOnly: integerPointsOnly)) {
+                            LabeledContent("Awarded points", value: "\(ScoreFormatting.scoreString(grade.awardedPoints)) / \(ScoreFormatting.scoreString(grade.maxPoints))")
+                        }
+
+                        Toggle("Final answer correct", isOn: $grade.isAnswerCorrect)
+                        Toggle("Work process correct", isOn: $grade.isProcessCorrect)
+                        Toggle("Needs review", isOn: $grade.needsReview)
+
                         VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text(grade.displayLabel)
-                                    .font(.headline)
-                                Spacer()
-                                Text("\(ScoreFormatting.scoreString(grade.awardedPoints)) / \(ScoreFormatting.scoreString(grade.maxPoints))")
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            HStack(spacing: 8) {
-                                StatusChip(label: grade.isAnswerCorrect ? "Answer OK" : "Answer Off", color: grade.isAnswerCorrect ? .green : .red)
-                                StatusChip(label: grade.isProcessCorrect ? "Process OK" : "Process Off", color: grade.isProcessCorrect ? .green : .red)
-                                if grade.needsReview {
-                                    StatusChip(label: "Review", color: .orange)
-                                }
-                            }
-
+                            Text("Feedback")
+                                .font(.footnote.weight(.semibold))
+                            TextEditor(text: $grade.feedback)
+                                .frame(minHeight: 100)
                             RenderedTextBlock(text: grade.feedback)
                         }
-                        .padding(.vertical, 4)
                     }
                 }
 
-                if !submission.overallNotes.isEmpty {
-                    Section("Overall Notes") {
-                        RenderedTextBlock(text: submission.overallNotes)
-                    }
+                Section("Overall Notes") {
+                    TextEditor(text: $draft.overallNotes)
+                        .frame(minHeight: 120)
+                    RenderedTextBlock(text: draft.overallNotes)
                 }
             }
-            .navigationTitle(submission.studentName)
+            .navigationTitle(draft.studentName.isEmpty ? "Saved Result" : draft.studentName)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        saveChanges()
+                    }
+                    .disabled(draft.studentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .keyboardDismissToolbar()
         }
+    }
+
+    private func saveChanges() {
+        let normalized = draft.normalized(integerPointsOnly: integerPointsOnly)
+        submission.studentName = normalized.studentName.trimmingCharacters(in: .whitespacesAndNewlines)
+        submission.overallNotes = normalized.overallNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        submission.teacherReviewed = true
+        submission.setQuestionGrades(normalized.grades)
+        try? modelContext.save()
+        dismiss()
     }
 }
 
 private struct RubricQuestionDetailView: View {
-    let question: QuestionRubric
+    @Environment(\.modelContext) private var modelContext
+    @Bindable var question: QuestionRubric
+    @State private var maxPointsText: String
+
+    init(question: QuestionRubric) {
+        self.question = question
+        _maxPointsText = State(initialValue: ScoreFormatting.scoreString(question.maxPoints))
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(question.displayLabel)
-                        .font(.title2.weight(.semibold))
-                    Text("\(ScoreFormatting.scoreString(question.maxPoints)) points")
-                        .foregroundStyle(.secondary)
-                }
-
-                DetailCard(title: "Prompt") {
-                    RenderedTextBlock(text: question.promptText)
-                }
-
-                DetailCard(title: "Ideal Answer") {
-                    RenderedTextBlock(text: question.idealAnswer)
-                }
-
-                DetailCard(title: "Grading Criteria") {
-                    RenderedTextBlock(text: question.gradingCriteria)
-                }
+        Form {
+            Section("Question") {
+                TextField("Display label", text: $question.displayLabel)
+                    .textInputAutocapitalization(.words)
+                TextField("Question ID", text: $question.questionID)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                TextField("Max points", text: $maxPointsText)
+                    .keyboardType((question.session?.integerPointsOnlyEnabled ?? false) ? .numberPad : .decimalPad)
+                    .onChange(of: maxPointsText) { _, newValue in
+                        if let parsed = PointPolicy.parse(newValue, integerOnly: question.session?.integerPointsOnlyEnabled ?? false) {
+                            question.maxPoints = parsed
+                            try? modelContext.save()
+                        }
+                    }
             }
-            .padding(20)
+
+            Section("Prompt") {
+                TextEditor(text: $question.promptText)
+                    .frame(minHeight: 140)
+                RenderedTextBlock(text: question.promptText)
+            }
+
+            Section("Ideal Answer") {
+                TextEditor(text: $question.idealAnswer)
+                    .frame(minHeight: 160)
+                RenderedTextBlock(text: question.idealAnswer)
+            }
+
+            Section("Grading Criteria") {
+                TextEditor(text: $question.gradingCriteria)
+                    .frame(minHeight: 160)
+                RenderedTextBlock(text: question.gradingCriteria)
+            }
         }
-        .background(Color(.systemGroupedBackground))
         .navigationTitle(question.displayLabel)
         .navigationBarTitleDisplayMode(.inline)
+        .onDisappear {
+            try? modelContext.save()
+        }
+        .keyboardDismissToolbar()
     }
 }
 
@@ -1298,8 +1436,8 @@ private struct MathRenderedTextView: UIViewRepresentable {
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.isOpaque = false
-        webView.backgroundColor = .white
-        webView.scrollView.backgroundColor = .white
+        webView.backgroundColor = .clear
+        webView.scrollView.backgroundColor = .clear
         webView.scrollView.isScrollEnabled = false
         webView.navigationDelegate = context.coordinator
         return webView
@@ -1333,7 +1471,7 @@ private struct MathRenderedTextView: UIViewRepresentable {
             body {
               margin: 0;
               padding: 0;
-              background: #ffffff;
+              background: transparent;
               color: #111827;
               font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
               font-size: 17px;
@@ -1342,7 +1480,7 @@ private struct MathRenderedTextView: UIViewRepresentable {
             }
             .wrap {
               width: 100%;
-              background: #ffffff;
+              background: transparent;
             }
             p { margin: 0 0 0.9em 0; }
             mjx-container { margin: 0.35em 0 !important; }
@@ -1364,25 +1502,33 @@ private struct MathRenderedTextView: UIViewRepresentable {
               window.webkit.messageHandlers.contentHeight.postMessage(height);
             }
 
+            function waitForMathJax(retries) {
+              if (window.MathJax && window.MathJax.typesetPromise) {
+                MathJax.typesetPromise().then(function() {
+                  setTimeout(reportHeight, 60);
+                }).catch(function() {
+                  setTimeout(reportHeight, 60);
+                });
+                return;
+              }
+
+              if (retries > 0) {
+                setTimeout(function() {
+                  waitForMathJax(retries - 1);
+                }, 75);
+              } else {
+                setTimeout(reportHeight, 60);
+              }
+            }
+
             window.addEventListener('load', function() {
-              setTimeout(reportHeight, 50);
+              waitForMathJax(80);
             });
           </script>
           <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
         </head>
         <body>
           <div class="wrap">\(escaped)</div>
-          <script>
-            if (window.MathJax) {
-              MathJax.typesetPromise().then(function() {
-                setTimeout(reportHeight, 60);
-              }).catch(function() {
-                setTimeout(reportHeight, 60);
-              });
-            } else {
-              setTimeout(reportHeight, 60);
-            }
-          </script>
         </body>
         </html>
         """
@@ -1545,4 +1691,23 @@ private enum OrganizationCostState: Equatable {
     case loading
     case loaded(OrganizationCostSummary)
     case unavailable(String)
+}
+
+private struct KeyboardDismissToolbarModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content.toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
+            }
+        }
+    }
+}
+
+private extension View {
+    func keyboardDismissToolbar() -> some View {
+        modifier(KeyboardDismissToolbarModifier())
+    }
 }
