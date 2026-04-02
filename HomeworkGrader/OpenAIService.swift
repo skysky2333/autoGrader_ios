@@ -75,7 +75,10 @@ final class OpenAIService {
         apiKey: String,
         modelID: String,
         sessionTitle: String,
-        pageData: [Data]
+        pageData: [Data],
+        reasoningEffort: String?,
+        verbosity: String?,
+        serviceTier: String?
     ) async throws -> OpenAIResult<MasterExamPayload> {
         let schema: [String: Any] = [
             "type": "object",
@@ -134,7 +137,10 @@ final class OpenAIService {
             schema: schema,
             systemPrompt: systemPrompt,
             userText: userText,
-            images: pageData
+            images: pageData,
+            reasoningEffort: reasoningEffort,
+            verbosity: verbosity,
+            serviceTier: serviceTier
         )
     }
 
@@ -143,7 +149,10 @@ final class OpenAIService {
         modelID: String,
         rubric: [RubricSnapshot],
         pageData: [Data],
-        integerPointsOnly: Bool
+        integerPointsOnly: Bool,
+        reasoningEffort: String?,
+        verbosity: String?,
+        serviceTier: String?
     ) async throws -> OpenAIResult<SubmissionPayload> {
         let rubricData = try JSONEncoder.prettyPrinted.encode(rubric)
         let rubricString = String(decoding: rubricData, as: UTF8.self)
@@ -209,7 +218,10 @@ final class OpenAIService {
             schema: schema,
             systemPrompt: systemPrompt,
             userText: userText,
-            images: pageData
+            images: pageData,
+            reasoningEffort: reasoningEffort,
+            verbosity: verbosity,
+            serviceTier: serviceTier
         )
     }
 
@@ -270,7 +282,10 @@ final class OpenAIService {
         schema: [String: Any],
         systemPrompt: String,
         userText: String,
-        images: [Data]
+        images: [Data],
+        reasoningEffort: String? = nil,
+        verbosity: String? = nil,
+        serviceTier: String? = nil
     ) async throws -> OpenAIResult<T> {
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedKey.isEmpty else { throw OpenAIServiceError.missingAPIKey }
@@ -290,7 +305,20 @@ final class OpenAIService {
             ])
         }
 
-        let body: [String: Any] = [
+        var textConfig: [String: Any] = [
+            "format": [
+                "type": "json_schema",
+                "name": schemaName,
+                "strict": true,
+                "schema": schema,
+            ],
+        ]
+
+        if let verbosity {
+            textConfig["verbosity"] = verbosity
+        }
+
+        var body: [String: Any] = [
             "model": modelID,
             "store": false,
             "input": [
@@ -308,15 +336,18 @@ final class OpenAIService {
                     "content": userContent,
                 ],
             ],
-            "text": [
-                "format": [
-                    "type": "json_schema",
-                    "name": schemaName,
-                    "strict": true,
-                    "schema": schema,
-                ],
-            ],
+            "text": textConfig,
         ]
+
+        if let reasoningEffort {
+            body["reasoning"] = [
+                "effort": reasoningEffort,
+            ]
+        }
+
+        if let serviceTier {
+            body["service_tier"] = serviceTier
+        }
 
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"

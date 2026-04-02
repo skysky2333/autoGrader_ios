@@ -5,6 +5,7 @@ import VisionKit
 import WebKit
 
 struct ContentView: View {
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \GradingSession.createdAt, order: .reverse) private var sessions: [GradingSession]
     @State private var showingNewSession = false
     @State private var showingSettings = false
@@ -37,6 +38,13 @@ struct ContentView: View {
                                 SessionDetailView(session: session)
                             } label: {
                                 SessionRow(session: session)
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    deleteSession(session)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
                             }
                         }
                     }
@@ -71,6 +79,11 @@ struct ContentView: View {
     private var hasAPIKey: Bool {
         let key = KeychainStore.shared.string(for: AppSecrets.openAIKey) ?? ""
         return !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func deleteSession(_ session: GradingSession) {
+        modelContext.delete(session)
+        try? modelContext.save()
     }
 }
 
@@ -123,6 +136,12 @@ private struct NewSessionSheet: View {
     @State private var answerModel = ModelCatalog.defaultAnswerModel
     @State private var gradingModel = ModelCatalog.defaultGradingModel
     @State private var integerPointsOnly = true
+    @State private var answerReasoningEffort: String? = nil
+    @State private var gradingReasoningEffort: String? = nil
+    @State private var answerVerbosity: String? = nil
+    @State private var gradingVerbosity: String? = nil
+    @State private var answerServiceTier: String? = nil
+    @State private var gradingServiceTier: String? = nil
 
     var body: some View {
         NavigationStack {
@@ -145,6 +164,19 @@ private struct NewSessionSheet: View {
                     Text("When enabled, rubric points and awarded scores are restricted to whole numbers.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                }
+
+                Section {
+                    DisclosureGroup("Advanced API Settings") {
+                        APIAdvancedSettingsEditor(
+                            answerReasoningEffort: $answerReasoningEffort,
+                            gradingReasoningEffort: $gradingReasoningEffort,
+                            answerVerbosity: $answerVerbosity,
+                            gradingVerbosity: $gradingVerbosity,
+                            answerServiceTier: $answerServiceTier,
+                            gradingServiceTier: $gradingServiceTier
+                        )
+                    }
                 }
             }
             .navigationTitle("New Session")
@@ -178,6 +210,12 @@ private struct NewSessionSheet: View {
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             answerModelID: answerModel.trimmingCharacters(in: .whitespacesAndNewlines),
             gradingModelID: gradingModel.trimmingCharacters(in: .whitespacesAndNewlines),
+            answerReasoningEffort: answerReasoningEffort,
+            gradingReasoningEffort: gradingReasoningEffort,
+            answerVerbosity: answerVerbosity,
+            gradingVerbosity: gradingVerbosity,
+            answerServiceTier: answerServiceTier,
+            gradingServiceTier: gradingServiceTier,
             apiKeyFingerprint: APIKeyIdentity.fingerprint(for: currentKey),
             integerPointsOnly: integerPointsOnly
         )
@@ -342,6 +380,7 @@ private struct SettingsView: View {
 }
 
 private struct SessionDetailView: View {
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Bindable var session: GradingSession
 
@@ -354,6 +393,7 @@ private struct SessionDetailView: View {
     @State private var shareItem: ShareItem?
     @State private var alertItem: AlertItem?
     @State private var busyMessage: String?
+    @State private var showingDeleteConfirmation = false
 
     var body: some View {
         Form {
@@ -378,6 +418,26 @@ private struct SessionDetailView: View {
 
                     Toggle("Integer points only", isOn: integerPointsOnlyBinding)
                     Toggle("Session ended", isOn: $session.isFinished)
+                }
+
+                Section {
+                    DisclosureGroup("Advanced API Settings") {
+                        APIAdvancedSettingsEditor(
+                            answerReasoningEffort: $session.answerReasoningEffort,
+                            gradingReasoningEffort: $session.gradingReasoningEffort,
+                            answerVerbosity: $session.answerVerbosity,
+                            gradingVerbosity: $session.gradingVerbosity,
+                            answerServiceTier: $session.answerServiceTier,
+                            gradingServiceTier: $session.gradingServiceTier
+                        )
+
+                        LabeledContent("Answer reasoning", value: session.answerReasoningLabel)
+                        LabeledContent("Grading reasoning", value: session.gradingReasoningLabel)
+                        LabeledContent("Answer verbosity", value: session.answerVerbosityLabel)
+                        LabeledContent("Grading verbosity", value: session.gradingVerbosityLabel)
+                        LabeledContent("Answer tier", value: session.answerServiceTierLabel)
+                        LabeledContent("Grading tier", value: session.gradingServiceTierLabel)
+                    }
                 }
 
                 if session.questions.isEmpty {
@@ -474,6 +534,19 @@ private struct SessionDetailView: View {
         }
         .navigationTitle(session.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button(role: .destructive) {
+                        showingDeleteConfirmation = true
+                    } label: {
+                        Label("Delete Session", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+            }
+        }
         .sheet(isPresented: $showingMasterScanner) {
             DocumentScannerView(
                 onComplete: { images in
@@ -530,6 +603,14 @@ private struct SessionDetailView: View {
         }
         .alert(item: $alertItem) { item in
             Alert(title: Text("Homework Grader"), message: Text(item.message), dismissButton: .default(Text("OK")))
+        }
+        .confirmationDialog("Delete this session?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
+            Button("Delete Session", role: .destructive) {
+                deleteSession()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the rubric, scans, and saved results for this session.")
         }
         .overlay {
             if let busyMessage {
@@ -591,7 +672,10 @@ private struct SessionDetailView: View {
                 apiKey: apiKey,
                 modelID: session.answerModelID,
                 sessionTitle: session.title,
-                pageData: pageData
+                pageData: pageData,
+                reasoningEffort: session.answerReasoningEffort,
+                verbosity: session.answerVerbosity,
+                serviceTier: session.answerServiceTier
             )
 
             recordUsage(result.usage, apiKey: apiKey)
@@ -626,7 +710,10 @@ private struct SessionDetailView: View {
                 modelID: session.gradingModelID,
                 rubric: session.sortedQuestions.map(\.snapshot),
                 pageData: pageData,
-                integerPointsOnly: session.integerPointsOnlyEnabled
+                integerPointsOnly: session.integerPointsOnlyEnabled,
+                reasoningEffort: session.gradingReasoningEffort,
+                verbosity: session.gradingVerbosity,
+                serviceTier: session.gradingServiceTier
             )
 
             recordUsage(result.usage, apiKey: apiKey)
@@ -716,6 +803,12 @@ private struct SessionDetailView: View {
             }
             submission.setQuestionGrades(normalizedGrades)
         }
+    }
+
+    private func deleteSession() {
+        modelContext.delete(session)
+        try? modelContext.save()
+        dismiss()
     }
 }
 
@@ -1044,6 +1137,66 @@ private struct ModelTextField: View {
     }
 }
 
+private struct APIAdvancedSettingsEditor: View {
+    @Binding var answerReasoningEffort: String?
+    @Binding var gradingReasoningEffort: String?
+    @Binding var answerVerbosity: String?
+    @Binding var gradingVerbosity: String?
+    @Binding var answerServiceTier: String?
+    @Binding var gradingServiceTier: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            AdvancedSettingPicker(
+                title: "Answer reasoning effort",
+                selection: $answerReasoningEffort,
+                options: APIRequestTuningCatalog.reasoningEffortOptions
+            )
+            AdvancedSettingPicker(
+                title: "Grading reasoning effort",
+                selection: $gradingReasoningEffort,
+                options: APIRequestTuningCatalog.reasoningEffortOptions
+            )
+            AdvancedSettingPicker(
+                title: "Answer verbosity",
+                selection: $answerVerbosity,
+                options: APIRequestTuningCatalog.verbosityOptions
+            )
+            AdvancedSettingPicker(
+                title: "Grading verbosity",
+                selection: $gradingVerbosity,
+                options: APIRequestTuningCatalog.verbosityOptions
+            )
+            AdvancedSettingPicker(
+                title: "Answer service tier",
+                selection: $answerServiceTier,
+                options: APIRequestTuningCatalog.serviceTierOptions
+            )
+            AdvancedSettingPicker(
+                title: "Grading service tier",
+                selection: $gradingServiceTier,
+                options: APIRequestTuningCatalog.serviceTierOptions
+            )
+        }
+        .padding(.top, 8)
+    }
+}
+
+private struct AdvancedSettingPicker: View {
+    let title: String
+    @Binding var selection: String?
+    let options: [APIRequestTuningOption]
+
+    var body: some View {
+        Picker(title, selection: $selection) {
+            ForEach(options) { option in
+                Text(option.label).tag(option.value)
+            }
+        }
+        .pickerStyle(.menu)
+    }
+}
+
 private struct DetailCard<Content: View>: View {
     let title: String
     let content: Content
@@ -1120,6 +1273,11 @@ private struct RenderedTextBlock: View {
     var body: some View {
         MathRenderedTextView(text: text, contentHeight: $contentHeight)
             .frame(minHeight: max(contentHeight, 44), maxHeight: max(contentHeight, 44))
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(.white)
+            )
     }
 }
 
@@ -1140,8 +1298,8 @@ private struct MathRenderedTextView: UIViewRepresentable {
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.isOpaque = false
-        webView.backgroundColor = .clear
-        webView.scrollView.backgroundColor = .clear
+        webView.backgroundColor = .white
+        webView.scrollView.backgroundColor = .white
         webView.scrollView.isScrollEnabled = false
         webView.navigationDelegate = context.coordinator
         return webView
@@ -1175,7 +1333,7 @@ private struct MathRenderedTextView: UIViewRepresentable {
             body {
               margin: 0;
               padding: 0;
-              background: transparent;
+              background: #ffffff;
               color: #111827;
               font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
               font-size: 17px;
@@ -1184,6 +1342,7 @@ private struct MathRenderedTextView: UIViewRepresentable {
             }
             .wrap {
               width: 100%;
+              background: #ffffff;
             }
             p { margin: 0 0 0.9em 0; }
             mjx-container { margin: 0.35em 0 !important; }

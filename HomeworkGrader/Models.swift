@@ -15,6 +15,43 @@ enum ModelCatalog {
     static let defaultGradingModel = "gpt-5.4-mini"
 }
 
+struct APIRequestTuningOption: Identifiable, Hashable {
+    let label: String
+    let value: String?
+
+    var id: String { value ?? "default" }
+}
+
+enum APIRequestTuningCatalog {
+    static let reasoningEffortOptions = [
+        APIRequestTuningOption(label: "API Default", value: nil),
+        APIRequestTuningOption(label: "None", value: "none"),
+        APIRequestTuningOption(label: "Minimal", value: "minimal"),
+        APIRequestTuningOption(label: "Low", value: "low"),
+        APIRequestTuningOption(label: "Medium", value: "medium"),
+        APIRequestTuningOption(label: "High", value: "high"),
+        APIRequestTuningOption(label: "XHigh", value: "xhigh"),
+    ]
+
+    static let verbosityOptions = [
+        APIRequestTuningOption(label: "API Default", value: nil),
+        APIRequestTuningOption(label: "Low", value: "low"),
+        APIRequestTuningOption(label: "Medium", value: "medium"),
+        APIRequestTuningOption(label: "High", value: "high"),
+    ]
+
+    static let serviceTierOptions = [
+        APIRequestTuningOption(label: "Auto (API Default)", value: nil),
+        APIRequestTuningOption(label: "Default", value: "default"),
+        APIRequestTuningOption(label: "Flex", value: "flex"),
+        APIRequestTuningOption(label: "Priority", value: "priority"),
+    ]
+
+    static func label(for value: String?, in options: [APIRequestTuningOption]) -> String {
+        options.first(where: { $0.value == value })?.label ?? "API Default"
+    }
+}
+
 @Model
 final class GradingSession {
     @Attribute(.unique) var id: UUID
@@ -22,6 +59,12 @@ final class GradingSession {
     var createdAt: Date
     var answerModelID: String
     var gradingModelID: String
+    var answerReasoningEffort: String?
+    var gradingReasoningEffort: String?
+    var answerVerbosity: String?
+    var gradingVerbosity: String?
+    var answerServiceTier: String?
+    var gradingServiceTier: String?
     var estimatedCostUSD: Double?
     var apiKeyFingerprint: String?
     var integerPointsOnly: Bool?
@@ -41,6 +84,12 @@ final class GradingSession {
         createdAt: Date = .now,
         answerModelID: String,
         gradingModelID: String,
+        answerReasoningEffort: String? = nil,
+        gradingReasoningEffort: String? = nil,
+        answerVerbosity: String? = nil,
+        gradingVerbosity: String? = nil,
+        answerServiceTier: String? = nil,
+        gradingServiceTier: String? = nil,
         estimatedCostUSD: Double? = nil,
         apiKeyFingerprint: String? = nil,
         integerPointsOnly: Bool = false,
@@ -53,6 +102,12 @@ final class GradingSession {
         self.createdAt = createdAt
         self.answerModelID = answerModelID
         self.gradingModelID = gradingModelID
+        self.answerReasoningEffort = answerReasoningEffort
+        self.gradingReasoningEffort = gradingReasoningEffort
+        self.answerVerbosity = answerVerbosity
+        self.gradingVerbosity = gradingVerbosity
+        self.answerServiceTier = answerServiceTier
+        self.gradingServiceTier = gradingServiceTier
         self.estimatedCostUSD = estimatedCostUSD
         self.apiKeyFingerprint = apiKeyFingerprint
         self.integerPointsOnly = integerPointsOnly
@@ -164,6 +219,30 @@ extension GradingSession {
 
     var sessionCostLabel: String {
         CostFormatting.usdString(estimatedCostUSD)
+    }
+
+    var answerReasoningLabel: String {
+        APIRequestTuningCatalog.label(for: answerReasoningEffort, in: APIRequestTuningCatalog.reasoningEffortOptions)
+    }
+
+    var gradingReasoningLabel: String {
+        APIRequestTuningCatalog.label(for: gradingReasoningEffort, in: APIRequestTuningCatalog.reasoningEffortOptions)
+    }
+
+    var answerVerbosityLabel: String {
+        APIRequestTuningCatalog.label(for: answerVerbosity, in: APIRequestTuningCatalog.verbosityOptions)
+    }
+
+    var gradingVerbosityLabel: String {
+        APIRequestTuningCatalog.label(for: gradingVerbosity, in: APIRequestTuningCatalog.verbosityOptions)
+    }
+
+    var answerServiceTierLabel: String {
+        APIRequestTuningCatalog.label(for: answerServiceTier, in: APIRequestTuningCatalog.serviceTierOptions)
+    }
+
+    var gradingServiceTierLabel: String {
+        APIRequestTuningCatalog.label(for: gradingServiceTier, in: APIRequestTuningCatalog.serviceTierOptions)
     }
 
     func masterScans() -> [Data] {
