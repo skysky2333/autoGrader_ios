@@ -108,6 +108,7 @@ private struct NewSessionSheet: View {
     @State private var title = ""
     @State private var answerModel = ModelCatalog.defaultAnswerModel
     @State private var gradingModel = ModelCatalog.defaultGradingModel
+    @State private var integerPointsOnly = true
 
     var body: some View {
         NavigationStack {
@@ -123,6 +124,13 @@ private struct NewSessionSheet: View {
                 Section("OpenAI Models") {
                     ModelTextField(title: "Answer generation model", text: $answerModel)
                     ModelTextField(title: "Grading model", text: $gradingModel)
+                }
+
+                Section("Scoring") {
+                    Toggle("Integer points only", isOn: $integerPointsOnly)
+                    Text("When enabled, rubric points and awarded scores are restricted to whole numbers.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("New Session")
@@ -154,7 +162,8 @@ private struct NewSessionSheet: View {
         let session = GradingSession(
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             answerModelID: answerModel.trimmingCharacters(in: .whitespacesAndNewlines),
-            gradingModelID: gradingModel.trimmingCharacters(in: .whitespacesAndNewlines)
+            gradingModelID: gradingModel.trimmingCharacters(in: .whitespacesAndNewlines),
+            integerPointsOnly: integerPointsOnly
         )
         modelContext.insert(session)
         try? modelContext.save()
@@ -256,10 +265,12 @@ private struct SessionDetailView: View {
             Section("Overview") {
                 LabeledContent("Answer model", value: session.answerModelID)
                 LabeledContent("Grading model", value: session.gradingModelID)
+                LabeledContent("Point mode", value: session.pointModeLabel)
                 LabeledContent("Questions", value: "\(session.sortedQuestions.count)")
                 LabeledContent("Saved submissions", value: "\(session.sortedSubmissions.count)")
                 LabeledContent("Total points", value: ScoreFormatting.scoreString(session.totalPossiblePoints))
 
+                Toggle("Integer points only", isOn: integerPointsOnlyBinding)
                 Toggle("Session ended", isOn: $session.isFinished)
             }
 
@@ -383,13 +394,13 @@ private struct SessionDetailView: View {
             .ignoresSafeArea()
         }
         .sheet(item: $rubricReviewState) { reviewState in
-            AnswerKeyReviewView(reviewState: reviewState) { approvedDrafts in
+            AnswerKeyReviewView(reviewState: reviewState, integerPointsOnly: session.integerPointsOnlyEnabled) { approvedDrafts in
                 saveRubric(approvedDrafts, pageData: reviewState.pageData)
                 rubricReviewState = nil
             }
         }
         .sheet(item: $submissionDraft) { draft in
-            SubmissionReviewView(draft: draft) { approvedDraft in
+            SubmissionReviewView(draft: draft, integerPointsOnly: session.integerPointsOnlyEnabled) { approvedDraft in
                 saveSubmission(approvedDraft)
                 submissionDraft = nil
             }
@@ -413,6 +424,19 @@ private struct SessionDetailView: View {
     private var hasAPIKey: Bool {
         let key = KeychainStore.shared.string(for: AppSecrets.openAIKey) ?? ""
         return !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var integerPointsOnlyBinding: Binding<Bool> {
+        Binding(
+            get: { session.integerPointsOnlyEnabled },
+            set: { newValue in
+                session.integerPointsOnly = newValue
+                if newValue {
+                    normalizeSessionToIntegerPoints()
+                }
+                try? modelContext.save()
+            }
+        )
     }
 
     private func startMasterScan() {
@@ -458,7 +482,8 @@ private struct SessionDetailView: View {
                 return
             }
 
-            rubricReviewState = .from(payload: payload, pageData: pageData)
+            rubricReviewState = .from(payload: payload, pageData: pageData, integerPointsOnly: session.integerPointsOnlyEnabled)
+                .normalized(integerPointsOnly: session.integerPointsOnlyEnabled)
         } catch {
             alertItem = AlertItem(message: error.localizedDescription)
         }
@@ -481,10 +506,16 @@ private struct SessionDetailView: View {
                 apiKey: apiKey,
                 modelID: session.gradingModelID,
                 rubric: session.sortedQuestions.map(\.snapshot),
-                pageData: pageData
+                pageData: pageData,
+                integerPointsOnly: session.integerPointsOnlyEnabled
             )
 
-            submissionDraft = SubmissionDraft.from(payload: payload, rubric: session.sortedQuestions, pageData: pageData)
+            submissionDraft = SubmissionDraft.from(
+                payload: payload,
+                rubric: session.sortedQuestions,
+                pageData: pageData,
+                integerPointsOnly: session.integerPointsOnlyEnabled
+            )
         } catch {
             alertItem = AlertItem(message: error.localizedDescription)
         }
@@ -505,7 +536,7 @@ private struct SessionDetailView: View {
                 promptText: draft.promptText.trimmingCharacters(in: .whitespacesAndNewlines),
                 idealAnswer: draft.idealAnswer.trimmingCharacters(in: .whitespacesAndNewlines),
                 gradingCriteria: draft.gradingCriteria.trimmingCharacters(in: .whitespacesAndNewlines),
-                maxPoints: Double(draft.maxPointsText) ?? 0,
+                maxPoints: PointPolicy.parse(draft.maxPointsText, integerOnly: session.integerPointsOnlyEnabled) ?? 0,
                 session: session
             )
             modelContext.insert(question)
@@ -539,17 +570,35 @@ private struct SessionDetailView: View {
             alertItem = AlertItem(message: "Unable to export CSV. \(error.localizedDescription)")
         }
     }
+
+    private func normalizeSessionToIntegerPoints() {
+        for question in session.questions {
+            question.maxPoints = PointPolicy.normalize(question.maxPoints, integerOnly: true)
+        }
+
+        for submission in session.submissions {
+            let normalizedGrades = submission.questionGrades().map { grade in
+                var adjusted = grade
+                adjusted.maxPoints = PointPolicy.normalize(adjusted.maxPoints, integerOnly: true)
+                adjusted.awardedPoints = PointPolicy.normalize(adjusted.awardedPoints, maxPoints: adjusted.maxPoints, integerOnly: true)
+                return adjusted
+            }
+            submission.setQuestionGrades(normalizedGrades)
+        }
+    }
 }
 
 private struct AnswerKeyReviewView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var questionDrafts: [RubricQuestionDraft]
     let pageData: [Data]
+    let integerPointsOnly: Bool
     let onApprove: ([RubricQuestionDraft]) -> Void
 
-    init(reviewState: RubricReviewState, onApprove: @escaping ([RubricQuestionDraft]) -> Void) {
+    init(reviewState: RubricReviewState, integerPointsOnly: Bool, onApprove: @escaping ([RubricQuestionDraft]) -> Void) {
         _questionDrafts = State(initialValue: reviewState.questionDrafts)
         self.pageData = reviewState.pageData
+        self.integerPointsOnly = integerPointsOnly
         self.onApprove = onApprove
     }
 
@@ -558,7 +607,7 @@ private struct AnswerKeyReviewView: View {
             Form {
                 Section("Scanned Pages") {
                     ImageStripView(pageData: pageData)
-                    Text("Review and edit the generated answer key. Enter the max points for every question before approving.")
+                    Text(integerPointsOnly ? "Review and edit the generated answer key. Enter whole-number max points for every question before approving." : "Review and edit the generated answer key. Enter the max points for every question before approving.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -594,7 +643,7 @@ private struct AnswerKeyReviewView: View {
                         }
 
                         TextField("Max points", text: $draft.maxPointsText)
-                            .keyboardType(.decimalPad)
+                            .keyboardType(integerPointsOnly ? .numberPad : .decimalPad)
                     }
                 }
             }
@@ -625,7 +674,7 @@ private struct AnswerKeyReviewView: View {
             !$0.promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             !$0.idealAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             !$0.gradingCriteria.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            (Double($0.maxPointsText) ?? 0) > 0
+            PointPolicy.parse($0.maxPointsText, integerOnly: integerPointsOnly) != nil
         }
     }
 }
@@ -633,10 +682,12 @@ private struct AnswerKeyReviewView: View {
 private struct SubmissionReviewView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft: SubmissionDraft
+    let integerPointsOnly: Bool
     let onSave: (SubmissionDraft) -> Void
 
-    init(draft: SubmissionDraft, onSave: @escaping (SubmissionDraft) -> Void) {
-        _draft = State(initialValue: draft)
+    init(draft: SubmissionDraft, integerPointsOnly: Bool, onSave: @escaping (SubmissionDraft) -> Void) {
+        _draft = State(initialValue: draft.normalized(integerPointsOnly: integerPointsOnly))
+        self.integerPointsOnly = integerPointsOnly
         self.onSave = onSave
     }
 
@@ -664,11 +715,16 @@ private struct SubmissionReviewView: View {
                 Section("Scores") {
                     LabeledContent("Total", value: "\(ScoreFormatting.scoreString(draft.totalScore)) / \(ScoreFormatting.scoreString(draft.maxScore))")
                         .font(.headline)
+                    if integerPointsOnly {
+                        Text("Integer-points mode is on. Awarded scores are restricted to whole numbers.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 ForEach($draft.grades) { $grade in
                     Section(grade.displayLabel) {
-                        Stepper(value: $grade.awardedPoints, in: 0...grade.maxPoints, step: 0.5) {
+                        Stepper(value: $grade.awardedPoints, in: 0...grade.maxPoints, step: PointPolicy.step(integerOnly: integerPointsOnly)) {
                             LabeledContent("Awarded points", value: "\(ScoreFormatting.scoreString(grade.awardedPoints)) / \(ScoreFormatting.scoreString(grade.maxPoints))")
                         }
 
@@ -714,13 +770,7 @@ private struct SubmissionReviewView: View {
     }
 
     private var normalizedDraft: SubmissionDraft {
-        var copy = draft
-        copy.grades = copy.grades.map { grade in
-            var adjusted = grade
-            adjusted.awardedPoints = min(max(adjusted.awardedPoints, 0), adjusted.maxPoints)
-            return adjusted
-        }
-        return copy
+        draft.normalized(integerPointsOnly: integerPointsOnly)
     }
 }
 
@@ -840,11 +890,21 @@ private struct ImageStripView: View {
                 ForEach(Array(pageData.enumerated()), id: \.offset) { index, data in
                     if let image = UIImage(data: data) {
                         VStack(alignment: .leading, spacing: 6) {
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 140, height: 180)
-                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(Color(.secondarySystemBackground))
+
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .padding(8)
+                            }
+                            .frame(width: 150, height: 200)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 14)
+                                    .strokeBorder(.quaternary, lineWidth: 1)
+                            }
                             Text("Page \(index + 1)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)

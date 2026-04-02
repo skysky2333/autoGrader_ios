@@ -124,7 +124,8 @@ final class OpenAIService {
         apiKey: String,
         modelID: String,
         rubric: [RubricSnapshot],
-        pageData: [Data]
+        pageData: [Data],
+        integerPointsOnly: Bool
     ) async throws -> SubmissionPayload {
         let rubricData = try JSONEncoder.prettyPrinted.encode(rubric)
         let rubricString = String(decoding: rubricData, as: UTF8.self)
@@ -173,6 +174,7 @@ final class OpenAIService {
         Use only the question ids supplied in the rubric.
         Keep max_points aligned with the rubric values exactly.
         Mark needs_review=true whenever handwriting, ambiguity, missing work, or rubric mismatch makes the grade uncertain.
+        \(integerPointsOnly ? "Award only whole-number scores. awarded_points and max_points must be integers with no decimals." : "Fractional scores are allowed when justified by the rubric.")
         """
 
         let userText = """

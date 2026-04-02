@@ -22,6 +22,7 @@ final class GradingSession {
     var createdAt: Date
     var answerModelID: String
     var gradingModelID: String
+    var integerPointsOnly: Bool?
     var isFinished: Bool
     var rubricApprovedAt: Date?
     @Attribute(.externalStorage) var masterScanArchive: Data?
@@ -38,6 +39,7 @@ final class GradingSession {
         createdAt: Date = .now,
         answerModelID: String,
         gradingModelID: String,
+        integerPointsOnly: Bool = false,
         isFinished: Bool = false,
         rubricApprovedAt: Date? = nil,
         masterScanArchive: Data? = nil
@@ -47,6 +49,7 @@ final class GradingSession {
         self.createdAt = createdAt
         self.answerModelID = answerModelID
         self.gradingModelID = gradingModelID
+        self.integerPointsOnly = integerPointsOnly
         self.isFinished = isFinished
         self.rubricApprovedAt = rubricApprovedAt
         self.masterScanArchive = masterScanArchive
@@ -129,6 +132,10 @@ final class StudentSubmission {
 }
 
 extension GradingSession {
+    var integerPointsOnlyEnabled: Bool {
+        integerPointsOnly ?? false
+    }
+
     var sortedQuestions: [QuestionRubric] {
         questions.sorted { lhs, rhs in
             lhs.orderIndex < rhs.orderIndex
@@ -143,6 +150,10 @@ extension GradingSession {
 
     var totalPossiblePoints: Double {
         sortedQuestions.reduce(0) { $0 + $1.maxPoints }
+    }
+
+    var pointModeLabel: String {
+        integerPointsOnlyEnabled ? "Integers only" : "Fractional allowed"
     }
 
     func masterScans() -> [Data] {
@@ -235,6 +246,35 @@ struct RubricSnapshot: Codable {
     var maxPoints: Double
 }
 
+enum PointPolicy {
+    static func parse(_ text: String, integerOnly: Bool) -> Double? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if integerOnly {
+            guard let value = Int(trimmed), value > 0 else { return nil }
+            return Double(value)
+        }
+
+        guard let value = Double(trimmed), value > 0 else { return nil }
+        return value
+    }
+
+    static func step(integerOnly: Bool) -> Double {
+        integerOnly ? 1 : 0.5
+    }
+
+    static func normalize(_ value: Double, maxPoints: Double? = nil, integerOnly: Bool) -> Double {
+        let upperBound = maxPoints ?? value
+        let clamped = min(max(value, 0), upperBound)
+        return integerOnly ? clamped.rounded() : clamped
+    }
+
+    static func displayText(for value: Double, integerOnly: Bool) -> String {
+        integerOnly ? String(Int(value.rounded())) : ScoreFormatting.scoreString(value)
+    }
+}
+
 extension QuestionRubric {
     var snapshot: RubricSnapshot {
         RubricSnapshot(
@@ -309,7 +349,7 @@ struct SubmissionQuestionPayload: Decodable {
 }
 
 extension RubricReviewState {
-    static func from(payload: MasterExamPayload, pageData: [Data]) -> RubricReviewState {
+    static func from(payload: MasterExamPayload, pageData: [Data], integerPointsOnly: Bool) -> RubricReviewState {
         let questionDrafts = payload.questions.enumerated().map { index, item in
             RubricQuestionDraft(
                 questionID: item.questionId.isEmpty ? "q\(index + 1)" : item.questionId,
@@ -317,29 +357,51 @@ extension RubricReviewState {
                 promptText: item.promptText,
                 idealAnswer: item.idealAnswer,
                 gradingCriteria: item.gradingCriteria,
-                maxPointsText: "1"
+                maxPointsText: integerPointsOnly ? "1" : "1"
             )
         }
 
         return RubricReviewState(pageData: pageData, questionDrafts: questionDrafts)
     }
+
+    func normalized(integerPointsOnly: Bool) -> RubricReviewState {
+        guard integerPointsOnly else { return self }
+
+        var copy = self
+        copy.questionDrafts = copy.questionDrafts.map { draft in
+            var adjusted = draft
+            if let parsed = PointPolicy.parse(draft.maxPointsText, integerOnly: false) {
+                adjusted.maxPointsText = PointPolicy.displayText(for: parsed, integerOnly: true)
+            }
+            return adjusted
+        }
+        return copy
+    }
 }
 
 extension SubmissionDraft {
-    static func from(payload: SubmissionPayload, rubric: [QuestionRubric], pageData: [Data]) -> SubmissionDraft {
+    static func from(payload: SubmissionPayload, rubric: [QuestionRubric], pageData: [Data], integerPointsOnly: Bool) -> SubmissionDraft {
         let payloadByQuestionID = Dictionary(uniqueKeysWithValues: payload.questionResults.map { ($0.questionId, $0) })
 
         let grades = rubric.map { question -> QuestionGradeRecord in
             if let result = payloadByQuestionID[question.questionID] {
+                let normalizedAwardedPoints = PointPolicy.normalize(
+                    result.awardedPoints,
+                    maxPoints: question.maxPoints,
+                    integerOnly: integerPointsOnly
+                )
+
                 return QuestionGradeRecord(
                     questionID: question.questionID,
                     displayLabel: question.displayLabel,
-                    awardedPoints: min(max(result.awardedPoints, 0), question.maxPoints),
+                    awardedPoints: normalizedAwardedPoints,
                     maxPoints: question.maxPoints,
                     isAnswerCorrect: result.isAnswerCorrect,
                     isProcessCorrect: result.isProcessCorrect,
                     feedback: result.feedback,
-                    needsReview: result.needsReview || abs(result.maxPoints - question.maxPoints) > 0.001
+                    needsReview: result.needsReview ||
+                        abs(result.maxPoints - question.maxPoints) > 0.001 ||
+                        (integerPointsOnly && abs(result.awardedPoints.rounded() - result.awardedPoints) > 0.001)
                 )
             }
 
@@ -361,6 +423,19 @@ extension SubmissionDraft {
             grades: grades,
             pageData: pageData
         )
+    }
+
+    func normalized(integerPointsOnly: Bool) -> SubmissionDraft {
+        guard integerPointsOnly else { return self }
+
+        var copy = self
+        copy.grades = copy.grades.map { grade in
+            var adjusted = grade
+            adjusted.maxPoints = PointPolicy.normalize(adjusted.maxPoints, integerOnly: true)
+            adjusted.awardedPoints = PointPolicy.normalize(adjusted.awardedPoints, maxPoints: adjusted.maxPoints, integerOnly: true)
+            return adjusted
+        }
+        return copy
     }
 }
 
