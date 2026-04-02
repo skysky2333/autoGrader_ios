@@ -12,14 +12,14 @@ enum ModelCatalog {
     ]
 
     static let defaultAnswerModel = "gpt-5.4"
-    static let defaultGradingModel = "gpt-5.4-mini"
+    static let defaultGradingModel = "gpt-5.4"
 }
 
 struct APIRequestTuningOption: Identifiable, Hashable {
     let label: String
     let value: String?
 
-    var id: String { value ?? "default" }
+    var id: String { "\(label)|\(value ?? "__nil__")" }
 }
 
 enum APIRequestTuningCatalog {
@@ -59,12 +59,16 @@ final class GradingSession {
     var createdAt: Date
     var answerModelID: String
     var gradingModelID: String
+    var validationModelID: String?
     var answerReasoningEffort: String?
     var gradingReasoningEffort: String?
     var answerVerbosity: String?
     var gradingVerbosity: String?
     var answerServiceTier: String?
     var gradingServiceTier: String?
+    var maxPagesPerSubmission: Int?
+    var overallGradingRules: String?
+    var relaxedGradingMode: Bool?
     var estimatedCostUSD: Double?
     var apiKeyFingerprint: String?
     var integerPointsOnly: Bool?
@@ -84,12 +88,16 @@ final class GradingSession {
         createdAt: Date = .now,
         answerModelID: String,
         gradingModelID: String,
+        validationModelID: String? = nil,
         answerReasoningEffort: String? = nil,
         gradingReasoningEffort: String? = nil,
         answerVerbosity: String? = nil,
         gradingVerbosity: String? = nil,
         answerServiceTier: String? = nil,
         gradingServiceTier: String? = nil,
+        maxPagesPerSubmission: Int? = nil,
+        overallGradingRules: String? = nil,
+        relaxedGradingMode: Bool = false,
         estimatedCostUSD: Double? = nil,
         apiKeyFingerprint: String? = nil,
         integerPointsOnly: Bool = false,
@@ -102,12 +110,16 @@ final class GradingSession {
         self.createdAt = createdAt
         self.answerModelID = answerModelID
         self.gradingModelID = gradingModelID
+        self.validationModelID = validationModelID
         self.answerReasoningEffort = answerReasoningEffort
         self.gradingReasoningEffort = gradingReasoningEffort
         self.answerVerbosity = answerVerbosity
         self.gradingVerbosity = gradingVerbosity
         self.answerServiceTier = answerServiceTier
         self.gradingServiceTier = gradingServiceTier
+        self.maxPagesPerSubmission = maxPagesPerSubmission
+        self.overallGradingRules = overallGradingRules
+        self.relaxedGradingMode = relaxedGradingMode
         self.estimatedCostUSD = estimatedCostUSD
         self.apiKeyFingerprint = apiKeyFingerprint
         self.integerPointsOnly = integerPointsOnly
@@ -159,6 +171,7 @@ final class StudentSubmission {
     @Attribute(.unique) var id: UUID
     var createdAt: Date
     var studentName: String
+    var nameNeedsReview: Bool?
     var overallNotes: String
     var teacherReviewed: Bool
     var totalScore: Double
@@ -171,6 +184,7 @@ final class StudentSubmission {
         id: UUID = UUID(),
         createdAt: Date = .now,
         studentName: String,
+        nameNeedsReview: Bool = false,
         overallNotes: String,
         teacherReviewed: Bool,
         totalScore: Double,
@@ -182,6 +196,7 @@ final class StudentSubmission {
         self.id = id
         self.createdAt = createdAt
         self.studentName = studentName
+        self.nameNeedsReview = nameNeedsReview
         self.overallNotes = overallNotes
         self.teacherReviewed = teacherReviewed
         self.totalScore = totalScore
@@ -195,6 +210,15 @@ final class StudentSubmission {
 extension GradingSession {
     var integerPointsOnlyEnabled: Bool {
         integerPointsOnly ?? false
+    }
+
+    var relaxedGradingModeEnabled: Bool {
+        relaxedGradingMode ?? false
+    }
+
+    var validationModelIDResolved: String {
+        let trimmed = validationModelID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? gradingModelID : trimmed
     }
 
     var sortedQuestions: [QuestionRubric] {
@@ -217,8 +241,19 @@ extension GradingSession {
         integerPointsOnlyEnabled ? "Integers only" : "Fractional allowed"
     }
 
+    var relaxedModeLabel: String {
+        relaxedGradingModeEnabled ? "On" : "Off"
+    }
+
     var sessionCostLabel: String {
         CostFormatting.usdString(estimatedCostUSD)
+    }
+
+    var maxPagesLabel: String {
+        if let maxPagesPerSubmission, maxPagesPerSubmission > 0 {
+            return "\(maxPagesPerSubmission)"
+        }
+        return "Off"
     }
 
     var answerReasoningLabel: String {
@@ -256,6 +291,10 @@ extension GradingSession {
 }
 
 extension StudentSubmission {
+    var nameNeedsReviewEnabled: Bool {
+        nameNeedsReview ?? false
+    }
+
     func scans() -> [Data] {
         guard let scanArchive else { return [] }
         return (try? JSONDecoder().decode([Data].self, from: scanArchive)) ?? []
@@ -290,6 +329,7 @@ struct RubricQuestionDraft: Identifiable, Hashable {
 struct RubricReviewState: Identifiable {
     var id = UUID()
     var pageData: [Data]
+    var overallGradingRules: String
     var questionDrafts: [RubricQuestionDraft]
 }
 
@@ -309,6 +349,7 @@ struct QuestionGradeRecord: Codable, Hashable, Identifiable {
 struct SubmissionDraft: Identifiable {
     var id = UUID()
     var studentName: String
+    var nameNeedsReview: Bool
     var overallNotes: String
     var grades: [QuestionGradeRecord]
     var pageData: [Data]
@@ -322,7 +363,11 @@ struct SubmissionDraft: Identifiable {
     }
 
     var requiresAttention: Bool {
-        studentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || grades.contains(where: \.needsReview)
+        studentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || nameNeedsReview || grades.contains(where: \.needsReview)
+    }
+
+    var isPerfectScore: Bool {
+        abs(totalScore - maxScore) < 0.001
     }
 }
 
@@ -405,19 +450,21 @@ struct GeneratedQuestionPayload: Decodable {
     }
 }
 
-struct SubmissionPayload: Decodable {
+struct SubmissionPayload: Codable {
     let studentName: String
+    let studentNameNeedsReview: Bool
     let questionResults: [SubmissionQuestionPayload]
     let overallNotes: String
 
     enum CodingKeys: String, CodingKey {
         case studentName = "student_name"
+        case studentNameNeedsReview = "student_name_needs_review"
         case questionResults = "question_results"
         case overallNotes = "overall_notes"
     }
 }
 
-struct SubmissionQuestionPayload: Decodable {
+struct SubmissionQuestionPayload: Codable {
     let questionId: String
     let awardedPoints: Double
     let maxPoints: Double
@@ -450,7 +497,11 @@ extension RubricReviewState {
             )
         }
 
-        return RubricReviewState(pageData: pageData, questionDrafts: questionDrafts)
+        return RubricReviewState(
+            pageData: pageData,
+            overallGradingRules: "Apply the approved rubric consistently across all questions. Give partial credit when justified by the shown work, and mark uncertain cases for teacher review.",
+            questionDrafts: questionDrafts
+        )
     }
 
     func normalized(integerPointsOnly: Bool) -> RubricReviewState {
@@ -472,6 +523,7 @@ extension SubmissionDraft {
     static func fromStoredSubmission(_ submission: StudentSubmission) -> SubmissionDraft {
         SubmissionDraft(
             studentName: submission.studentName,
+            nameNeedsReview: submission.nameNeedsReviewEnabled,
             overallNotes: submission.overallNotes,
             grades: submission.questionGrades(),
             pageData: submission.scans()
@@ -517,6 +569,7 @@ extension SubmissionDraft {
 
         return SubmissionDraft(
             studentName: payload.studentName.trimmingCharacters(in: .whitespacesAndNewlines),
+            nameNeedsReview: payload.studentNameNeedsReview || payload.studentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             overallNotes: payload.overallNotes,
             grades: grades,
             pageData: pageData
@@ -566,6 +619,7 @@ enum SessionExporter {
             createdAt: session.createdAt,
             answerModelID: session.answerModelID,
             gradingModelID: session.gradingModelID,
+            overallGradingRules: session.overallGradingRules,
             questionCount: session.sortedQuestions.count,
             submissionCount: session.sortedSubmissions.count,
             totalPoints: session.totalPossiblePoints,
@@ -591,6 +645,7 @@ enum SessionExporter {
             let stored = StoredSubmissionSummary(
                 id: submission.id,
                 studentName: submission.studentName,
+                nameNeedsReview: submission.nameNeedsReviewEnabled,
                 createdAt: submission.createdAt,
                 teacherReviewed: submission.teacherReviewed,
                 totalScore: submission.totalScore,
@@ -812,6 +867,7 @@ private struct SessionPackageSummary: Codable {
     let createdAt: Date
     let answerModelID: String
     let gradingModelID: String
+    let overallGradingRules: String?
     let questionCount: Int
     let submissionCount: Int
     let totalPoints: Double
@@ -822,6 +878,7 @@ private struct SessionPackageSummary: Codable {
 private struct StoredSubmissionSummary: Codable {
     let id: UUID
     let studentName: String
+    let nameNeedsReview: Bool
     let createdAt: Date
     let teacherReviewed: Bool
     let totalScore: Double

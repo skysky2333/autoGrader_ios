@@ -135,7 +135,9 @@ private struct NewSessionSheet: View {
     @State private var title = ""
     @State private var answerModel = ModelCatalog.defaultAnswerModel
     @State private var gradingModel = ModelCatalog.defaultGradingModel
+    @State private var validationModel = "gpt-5.4-mini"
     @State private var integerPointsOnly = true
+    @State private var relaxedGradingMode = false
     @State private var answerReasoningEffort: String? = nil
     @State private var gradingReasoningEffort: String? = nil
     @State private var answerVerbosity: String? = nil
@@ -157,11 +159,16 @@ private struct NewSessionSheet: View {
                 Section("OpenAI Models") {
                     ModelTextField(title: "Answer generation model", text: $answerModel)
                     ModelTextField(title: "Grading model", text: $gradingModel)
+                    ModelTextField(title: "Validation model", text: $validationModel)
                 }
 
                 Section("Scoring") {
                     Toggle("Integer points only", isOn: $integerPointsOnly)
+                    Toggle("Relaxed grading mode", isOn: $relaxedGradingMode)
                     Text("When enabled, rubric points and awarded scores are restricted to whole numbers.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Text("Relaxed grading mode gives full credit whenever the final answer is correct, even if the work process is imperfect.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -211,12 +218,14 @@ private struct NewSessionSheet: View {
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             answerModelID: answerModel.trimmingCharacters(in: .whitespacesAndNewlines),
             gradingModelID: gradingModel.trimmingCharacters(in: .whitespacesAndNewlines),
+            validationModelID: validationModel.trimmingCharacters(in: .whitespacesAndNewlines),
             answerReasoningEffort: answerReasoningEffort,
             gradingReasoningEffort: gradingReasoningEffort,
             answerVerbosity: answerVerbosity,
             gradingVerbosity: gradingVerbosity,
             answerServiceTier: answerServiceTier,
             gradingServiceTier: gradingServiceTier,
+            relaxedGradingMode: relaxedGradingMode,
             apiKeyFingerprint: APIKeyIdentity.fingerprint(for: currentKey),
             integerPointsOnly: integerPointsOnly
         )
@@ -397,6 +406,19 @@ private struct SessionDetailView: View {
     @State private var alertItem: AlertItem?
     @State private var busyMessage: String?
     @State private var showingDeleteConfirmation = false
+    @State private var isEditingOverviewConfig = false
+    @State private var draftAnswerModelID = ""
+    @State private var draftGradingModelID = ""
+    @State private var draftValidationModelID = ""
+    @State private var draftIntegerPointsOnly = false
+    @State private var draftRelaxedGradingMode = false
+    @State private var draftSessionEnded = false
+    @State private var draftAnswerReasoningEffort: String? = nil
+    @State private var draftGradingReasoningEffort: String? = nil
+    @State private var draftAnswerVerbosity: String? = nil
+    @State private var draftGradingVerbosity: String? = nil
+    @State private var draftAnswerServiceTier: String? = nil
+    @State private var draftGradingServiceTier: String? = nil
 
     var body: some View {
         Form {
@@ -411,35 +433,68 @@ private struct SessionDetailView: View {
 
             if selectedTab == .overview {
                 Section("Overview") {
-                    LabeledContent("Answer model", value: session.answerModelID)
-                    LabeledContent("Grading model", value: session.gradingModelID)
+                    if isEditingOverviewConfig {
+                        ModelTextField(title: "Answer generation model", text: $draftAnswerModelID)
+                        ModelTextField(title: "Grading model", text: $draftGradingModelID)
+                        ModelTextField(title: "Validation model", text: $draftValidationModelID)
+                    } else {
+                        LabeledContent("Answer model", value: session.answerModelID)
+                        LabeledContent("Grading model", value: session.gradingModelID)
+                        LabeledContent("Validation model", value: session.validationModelIDResolved)
+                    }
                     LabeledContent("Point mode", value: session.pointModeLabel)
                     LabeledContent("Questions", value: "\(session.sortedQuestions.count)")
                     LabeledContent("Saved submissions", value: "\(session.sortedSubmissions.count)")
                     LabeledContent("Total points", value: ScoreFormatting.scoreString(session.totalPossiblePoints))
                     LabeledContent("API cost", value: session.sessionCostLabel)
 
-                    Toggle("Integer points only", isOn: integerPointsOnlyBinding)
-                    Toggle("Session ended", isOn: $session.isFinished)
+                    if isEditingOverviewConfig {
+                        Toggle("Integer points only", isOn: $draftIntegerPointsOnly)
+                        Toggle("Relaxed grading mode", isOn: $draftRelaxedGradingMode)
+                        Toggle("Session ended", isOn: $draftSessionEnded)
+                    } else {
+                        LabeledContent("Integer points only", value: session.integerPointsOnlyEnabled ? "On" : "Off")
+                        LabeledContent("Relaxed grading mode", value: session.relaxedModeLabel)
+                        LabeledContent("Session ended", value: session.isFinished ? "On" : "Off")
+                    }
                 }
 
-                Section {
-                    DisclosureGroup("Advanced API Settings") {
+                Section("Advanced API Settings") {
+                    if isEditingOverviewConfig {
                         APIAdvancedSettingsEditor(
-                            answerReasoningEffort: $session.answerReasoningEffort,
-                            gradingReasoningEffort: $session.gradingReasoningEffort,
-                            answerVerbosity: $session.answerVerbosity,
-                            gradingVerbosity: $session.gradingVerbosity,
-                            answerServiceTier: $session.answerServiceTier,
-                            gradingServiceTier: $session.gradingServiceTier
+                            answerReasoningEffort: $draftAnswerReasoningEffort,
+                            gradingReasoningEffort: $draftGradingReasoningEffort,
+                            answerVerbosity: $draftAnswerVerbosity,
+                            gradingVerbosity: $draftGradingVerbosity,
+                            answerServiceTier: $draftAnswerServiceTier,
+                            gradingServiceTier: $draftGradingServiceTier
                         )
+                    }
 
-                        LabeledContent("Answer reasoning", value: session.answerReasoningLabel)
-                        LabeledContent("Grading reasoning", value: session.gradingReasoningLabel)
-                        LabeledContent("Answer verbosity", value: session.answerVerbosityLabel)
-                        LabeledContent("Grading verbosity", value: session.gradingVerbosityLabel)
-                        LabeledContent("Answer tier", value: session.answerServiceTierLabel)
-                        LabeledContent("Grading tier", value: session.gradingServiceTierLabel)
+                    LabeledContent("Answer reasoning", value: session.answerReasoningLabel)
+                    LabeledContent("Grading reasoning", value: session.gradingReasoningLabel)
+                    LabeledContent("Answer verbosity", value: session.answerVerbosityLabel)
+                    LabeledContent("Grading verbosity", value: session.gradingVerbosityLabel)
+                    LabeledContent("Answer tier", value: session.answerServiceTierLabel)
+                    LabeledContent("Grading tier", value: session.gradingServiceTierLabel)
+
+                    if isEditingOverviewConfig {
+                        HStack {
+                            Button("Cancel") {
+                                cancelOverviewConfigEditing()
+                            }
+
+                            Spacer()
+
+                            Button("Save Config") {
+                                saveOverviewConfigEdits()
+                            }
+                            .disabled(!canSaveOverviewConfig)
+                        }
+                    } else {
+                        Button("Edit Config") {
+                            beginOverviewConfigEditing()
+                        }
                     }
                 }
 
@@ -481,6 +536,22 @@ private struct SessionDetailView: View {
                 } else {
                     Section("Master Pages") {
                         ImageStripView(pageData: session.masterScans())
+                    }
+
+                    Section("Overall Rules") {
+                        NavigationLink {
+                            OverallRulesEditorView(session: session)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Session-wide grading rules")
+                                    .font(.headline)
+                                Text((session.overallGradingRules?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? session.overallGradingRules! : "No overall rules added yet."))
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(3)
+                            }
+                            .padding(.vertical, 4)
+                        }
                     }
 
                     Section("Questions") {
@@ -600,8 +671,8 @@ private struct SessionDetailView: View {
             .ignoresSafeArea()
         }
         .sheet(item: $rubricReviewState) { reviewState in
-            AnswerKeyReviewView(reviewState: reviewState, integerPointsOnly: session.integerPointsOnlyEnabled) { approvedDrafts in
-                saveRubric(approvedDrafts, pageData: reviewState.pageData)
+            AnswerKeyReviewView(reviewState: reviewState, integerPointsOnly: session.integerPointsOnlyEnabled) { overallRules, approvedDrafts in
+                saveRubric(overallRules: overallRules, approvedDrafts: approvedDrafts, pageData: reviewState.pageData)
                 rubricReviewState = nil
             }
         }
@@ -650,17 +721,54 @@ private struct SessionDetailView: View {
         return !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private var integerPointsOnlyBinding: Binding<Bool> {
-        Binding(
-            get: { session.integerPointsOnlyEnabled },
-            set: { newValue in
-                session.integerPointsOnly = newValue
-                if newValue {
-                    normalizeSessionToIntegerPoints()
-                }
-                try? modelContext.save()
-            }
-        )
+    private var canSaveOverviewConfig: Bool {
+        !draftAnswerModelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !draftGradingModelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !draftValidationModelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func beginOverviewConfigEditing() {
+        draftAnswerModelID = session.answerModelID
+        draftGradingModelID = session.gradingModelID
+        draftValidationModelID = session.validationModelIDResolved
+        draftIntegerPointsOnly = session.integerPointsOnlyEnabled
+        draftRelaxedGradingMode = session.relaxedGradingModeEnabled
+        draftSessionEnded = session.isFinished
+        draftAnswerReasoningEffort = session.answerReasoningEffort
+        draftGradingReasoningEffort = session.gradingReasoningEffort
+        draftAnswerVerbosity = session.answerVerbosity
+        draftGradingVerbosity = session.gradingVerbosity
+        draftAnswerServiceTier = session.answerServiceTier
+        draftGradingServiceTier = session.gradingServiceTier
+        isEditingOverviewConfig = true
+    }
+
+    private func cancelOverviewConfigEditing() {
+        isEditingOverviewConfig = false
+    }
+
+    private func saveOverviewConfigEdits() {
+        let wasIntegerOnly = session.integerPointsOnlyEnabled
+
+        session.answerModelID = draftAnswerModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        session.gradingModelID = draftGradingModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        session.validationModelID = draftValidationModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        session.integerPointsOnly = draftIntegerPointsOnly
+        session.relaxedGradingMode = draftRelaxedGradingMode
+        session.isFinished = draftSessionEnded
+        session.answerReasoningEffort = draftAnswerReasoningEffort
+        session.gradingReasoningEffort = draftGradingReasoningEffort
+        session.answerVerbosity = draftAnswerVerbosity
+        session.gradingVerbosity = draftGradingVerbosity
+        session.answerServiceTier = draftAnswerServiceTier
+        session.gradingServiceTier = draftGradingServiceTier
+
+        if !wasIntegerOnly && draftIntegerPointsOnly {
+            normalizeSessionToIntegerPoints()
+        }
+
+        try? modelContext.save()
+        isEditingOverviewConfig = false
     }
 
     private func startMasterScan() {
@@ -727,36 +835,113 @@ private struct SessionDetailView: View {
         }
 
         let apiKey = KeychainStore.shared.string(for: AppSecrets.openAIKey) ?? ""
-        busyMessage = "Grading submission..."
         defer { busyMessage = nil }
 
         do {
-            let result = try await OpenAIService.shared.gradeSubmission(
+            busyMessage = "Grading submission...\nInitial grading pass"
+            var gradingResult = try await OpenAIService.shared.gradeSubmission(
                 apiKey: apiKey,
                 modelID: session.gradingModelID,
                 rubric: session.sortedQuestions.map(\.snapshot),
+                overallRules: session.overallGradingRules,
                 pageData: pageData,
                 integerPointsOnly: session.integerPointsOnlyEnabled,
+                relaxedGradingMode: session.relaxedGradingModeEnabled,
                 reasoningEffort: session.gradingReasoningEffort,
                 verbosity: session.gradingVerbosity,
                 serviceTier: session.gradingServiceTier
             )
 
-            recordUsage(result.usage, apiKey: apiKey)
+            recordUsage(gradingResult.usage, apiKey: apiKey)
 
-            submissionDraft = SubmissionDraft.from(
-                payload: result.payload,
+            var draft = SubmissionDraft.from(
+                payload: gradingResult.payload,
                 rubric: session.sortedQuestions,
                 pageData: pageData,
                 integerPointsOnly: session.integerPointsOnlyEnabled
             )
+
+            let maxValidationAttempts = 3
+            var validationApproved = false
+
+            for attempt in 1...maxValidationAttempts {
+                busyMessage = "Grading submission...\nValidation pass \(attempt)"
+                let validationResult = try await OpenAIService.shared.validateSubmissionGrade(
+                    apiKey: apiKey,
+                    modelID: session.validationModelIDResolved,
+                    rubric: session.sortedQuestions.map(\.snapshot),
+                    overallRules: session.overallGradingRules,
+                    candidateGrading: gradingResult.payload,
+                    pageData: pageData,
+                    integerPointsOnly: session.integerPointsOnlyEnabled,
+                    relaxedGradingMode: session.relaxedGradingModeEnabled,
+                    reasoningEffort: session.gradingReasoningEffort,
+                    verbosity: session.gradingVerbosity,
+                    serviceTier: session.gradingServiceTier
+                )
+                recordUsage(validationResult.usage, apiKey: apiKey)
+
+                if validationResult.payload.isGradingCorrect {
+                    validationApproved = true
+                    break
+                }
+
+                if attempt == maxValidationAttempts {
+                    break
+                }
+
+                busyMessage = "Grading submission...\nRegrading pass \(attempt) after validation"
+                gradingResult = try await OpenAIService.shared.gradeSubmission(
+                    apiKey: apiKey,
+                    modelID: session.gradingModelID,
+                    rubric: session.sortedQuestions.map(\.snapshot),
+                    overallRules: session.overallGradingRules,
+                    pageData: pageData,
+                    integerPointsOnly: session.integerPointsOnlyEnabled,
+                    relaxedGradingMode: session.relaxedGradingModeEnabled,
+                    previousGrading: gradingResult.payload,
+                    validatorFeedback: validationResult.payload,
+                    reasoningEffort: session.gradingReasoningEffort,
+                    verbosity: session.gradingVerbosity,
+                    serviceTier: session.gradingServiceTier
+                )
+                recordUsage(gradingResult.usage, apiKey: apiKey)
+
+                draft = SubmissionDraft.from(
+                    payload: gradingResult.payload,
+                    rubric: session.sortedQuestions,
+                    pageData: pageData,
+                    integerPointsOnly: session.integerPointsOnlyEnabled
+                )
+            }
+
+            if !validationApproved {
+                var adjusted = draft
+                adjusted.overallNotes = [
+                    "Automated validation could not fully confirm this grading after multiple attempts.",
+                    adjusted.overallNotes,
+                ]
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .joined(separator: "\n\n")
+                adjusted.grades = adjusted.grades.map { grade in
+                    var copy = grade
+                    copy.needsReview = true
+                    return copy
+                }
+                adjusted.nameNeedsReview = true
+                draft = adjusted
+            }
+
+            submissionDraft = draft
         } catch {
             alertItem = AlertItem(message: error.localizedDescription)
         }
     }
 
-    private func saveRubric(_ approvedDrafts: [RubricQuestionDraft], pageData: [Data]) {
+    private func saveRubric(overallRules: String, approvedDrafts: [RubricQuestionDraft], pageData: [Data]) {
         session.setMasterScans(pageData)
+        let trimmedOverallRules = overallRules.trimmingCharacters(in: .whitespacesAndNewlines)
+        session.overallGradingRules = trimmedOverallRules.isEmpty ? nil : trimmedOverallRules
 
         for existing in session.questions {
             modelContext.delete(existing)
@@ -784,6 +969,7 @@ private struct SessionDetailView: View {
     private func saveSubmission(_ approvedDraft: SubmissionDraft) {
         let submission = StudentSubmission(
             studentName: approvedDraft.studentName.trimmingCharacters(in: .whitespacesAndNewlines),
+            nameNeedsReview: approvedDraft.nameNeedsReview,
             overallNotes: approvedDraft.overallNotes.trimmingCharacters(in: .whitespacesAndNewlines),
             teacherReviewed: true,
             totalScore: approvedDraft.totalScore,
@@ -858,12 +1044,14 @@ private struct AnswerKeyReviewView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var questionDrafts: [RubricQuestionDraft]
     @State private var defaultPointsText = "1"
+    @State private var overallGradingRules: String
     let pageData: [Data]
     let integerPointsOnly: Bool
-    let onApprove: ([RubricQuestionDraft]) -> Void
+    let onApprove: (String, [RubricQuestionDraft]) -> Void
 
-    init(reviewState: RubricReviewState, integerPointsOnly: Bool, onApprove: @escaping ([RubricQuestionDraft]) -> Void) {
+    init(reviewState: RubricReviewState, integerPointsOnly: Bool, onApprove: @escaping (String, [RubricQuestionDraft]) -> Void) {
         _questionDrafts = State(initialValue: reviewState.questionDrafts)
+        _overallGradingRules = State(initialValue: reviewState.overallGradingRules)
         self.pageData = reviewState.pageData
         self.integerPointsOnly = integerPointsOnly
         self.onApprove = onApprove
@@ -889,6 +1077,12 @@ private struct AnswerKeyReviewView: View {
                     .disabled(PointPolicy.parse(defaultPointsText, integerOnly: integerPointsOnly) == nil)
                 }
 
+                Section("Overall Grading Rules") {
+                    TextEditor(text: $overallGradingRules)
+                        .frame(minHeight: 140)
+                    RenderedPreviewButton(title: "Overall Grading Rules Preview", text: overallGradingRules)
+                }
+
                 ForEach($questionDrafts) { $draft in
                     Section(draft.displayLabel.isEmpty ? "Question" : draft.displayLabel) {
                         TextField("Question ID", text: $draft.questionID)
@@ -903,7 +1097,7 @@ private struct AnswerKeyReviewView: View {
                                 .font(.footnote.weight(.semibold))
                             TextEditor(text: $draft.promptText)
                                 .frame(minHeight: 100)
-                            RenderedTextBlock(text: draft.promptText)
+                            RenderedPreviewButton(title: "\(draft.displayLabel) Prompt Preview", text: draft.promptText)
                         }
 
                         VStack(alignment: .leading, spacing: 8) {
@@ -911,7 +1105,7 @@ private struct AnswerKeyReviewView: View {
                                 .font(.footnote.weight(.semibold))
                             TextEditor(text: $draft.idealAnswer)
                                 .frame(minHeight: 120)
-                            RenderedTextBlock(text: draft.idealAnswer)
+                            RenderedPreviewButton(title: "\(draft.displayLabel) Ideal Answer Preview", text: draft.idealAnswer)
                         }
 
                         VStack(alignment: .leading, spacing: 8) {
@@ -919,7 +1113,7 @@ private struct AnswerKeyReviewView: View {
                                 .font(.footnote.weight(.semibold))
                             TextEditor(text: $draft.gradingCriteria)
                                 .frame(minHeight: 120)
-                            RenderedTextBlock(text: draft.gradingCriteria)
+                            RenderedPreviewButton(title: "\(draft.displayLabel) Criteria Preview", text: draft.gradingCriteria)
                         }
 
                         TextField("Max points", text: $draft.maxPointsText)
@@ -938,7 +1132,7 @@ private struct AnswerKeyReviewView: View {
 
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Approve") {
-                        onApprove(questionDrafts)
+                        onApprove(overallGradingRules, questionDrafts)
                     }
                     .disabled(!canApprove)
                 }
@@ -995,6 +1189,14 @@ private struct SubmissionReviewView: View {
                 Section("Student") {
                     TextField("Student name", text: $draft.studentName)
                         .textInputAutocapitalization(.words)
+                    Toggle("Name needs review", isOn: $draft.nameNeedsReview)
+
+                    if draft.nameNeedsReview {
+                        HighlightNotice(
+                            message: "Name needs human review.",
+                            color: .orange
+                        )
+                    }
 
                     Text("The model extracts the name from the scanned pages. Correct it here before saving if needed.")
                         .font(.footnote)
@@ -1020,30 +1222,44 @@ private struct SubmissionReviewView: View {
                     }
                 }
 
-                ForEach($draft.grades) { $grade in
-                    Section(grade.displayLabel) {
-                        Stepper(value: $grade.awardedPoints, in: 0...grade.maxPoints, step: PointPolicy.step(integerOnly: integerPointsOnly)) {
-                            LabeledContent("Awarded points", value: "\(ScoreFormatting.scoreString(grade.awardedPoints)) / \(ScoreFormatting.scoreString(grade.maxPoints))")
+                ForEach(draft.grades.indices, id: \.self) { index in
+                    Section {
+                        if gradeNeedsHighlight(draft.grades[index]) {
+                            HighlightNotice(
+                                message: draft.grades[index].needsReview
+                                    ? "This answer needs human review."
+                                    : "This answer is not full score.",
+                                color: draft.grades[index].needsReview ? .orange : .red
+                            )
                         }
 
-                        Toggle("Final answer correct", isOn: $grade.isAnswerCorrect)
-                        Toggle("Work process correct", isOn: $grade.isProcessCorrect)
-                        Toggle("Needs review", isOn: $grade.needsReview)
+                        Stepper(value: $draft.grades[index].awardedPoints, in: 0...draft.grades[index].maxPoints, step: PointPolicy.step(integerOnly: integerPointsOnly)) {
+                            LabeledContent("Awarded points", value: "\(ScoreFormatting.scoreString(draft.grades[index].awardedPoints)) / \(ScoreFormatting.scoreString(draft.grades[index].maxPoints))")
+                        }
+
+                        Toggle("Final answer correct", isOn: $draft.grades[index].isAnswerCorrect)
+                        Toggle("Work process correct", isOn: $draft.grades[index].isProcessCorrect)
+                        Toggle("Needs review", isOn: $draft.grades[index].needsReview)
 
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Feedback")
                                 .font(.footnote.weight(.semibold))
-                            TextEditor(text: $grade.feedback)
+                            TextEditor(text: $draft.grades[index].feedback)
                                 .frame(minHeight: 100)
-                            RenderedTextBlock(text: grade.feedback)
+                            RenderedPreviewButton(title: "\(draft.grades[index].displayLabel) Feedback Preview", text: draft.grades[index].feedback)
                         }
+                    } header: {
+                        GradeSectionHeader(
+                            title: draft.grades[index].displayLabel,
+                            isHighlighted: gradeNeedsHighlight(draft.grades[index])
+                        )
                     }
                 }
 
                 Section("Overall Notes") {
                     TextEditor(text: $draft.overallNotes)
                         .frame(minHeight: 120)
-                    RenderedTextBlock(text: draft.overallNotes)
+                    RenderedPreviewButton(title: "Overall Notes Preview", text: draft.overallNotes)
                 }
             }
             .navigationTitle("Review Grade")
@@ -1102,6 +1318,14 @@ private struct SavedSubmissionDetailView: View {
                 Section("Student") {
                     TextField("Student name", text: $draft.studentName)
                         .textInputAutocapitalization(.words)
+                    Toggle("Name needs review", isOn: $draft.nameNeedsReview)
+
+                    if draft.nameNeedsReview {
+                        HighlightNotice(
+                            message: "Name needs human review.",
+                            color: .orange
+                        )
+                    }
                     LabeledContent("Saved", value: submission.createdAt.formatted(date: .abbreviated, time: .shortened))
                     LabeledContent("Score", value: "\(ScoreFormatting.scoreString(draft.totalScore)) / \(ScoreFormatting.scoreString(draft.maxScore))")
                 }
@@ -1112,30 +1336,44 @@ private struct SavedSubmissionDetailView: View {
                     }
                 }
 
-                ForEach($draft.grades) { $grade in
-                    Section(grade.displayLabel) {
-                        Stepper(value: $grade.awardedPoints, in: 0...grade.maxPoints, step: PointPolicy.step(integerOnly: integerPointsOnly)) {
-                            LabeledContent("Awarded points", value: "\(ScoreFormatting.scoreString(grade.awardedPoints)) / \(ScoreFormatting.scoreString(grade.maxPoints))")
+                ForEach(draft.grades.indices, id: \.self) { index in
+                    Section {
+                        if gradeNeedsHighlight(draft.grades[index]) {
+                            HighlightNotice(
+                                message: draft.grades[index].needsReview
+                                    ? "This answer needs human review."
+                                    : "This answer is not full score.",
+                                color: draft.grades[index].needsReview ? .orange : .red
+                            )
                         }
 
-                        Toggle("Final answer correct", isOn: $grade.isAnswerCorrect)
-                        Toggle("Work process correct", isOn: $grade.isProcessCorrect)
-                        Toggle("Needs review", isOn: $grade.needsReview)
+                        Stepper(value: $draft.grades[index].awardedPoints, in: 0...draft.grades[index].maxPoints, step: PointPolicy.step(integerOnly: integerPointsOnly)) {
+                            LabeledContent("Awarded points", value: "\(ScoreFormatting.scoreString(draft.grades[index].awardedPoints)) / \(ScoreFormatting.scoreString(draft.grades[index].maxPoints))")
+                        }
+
+                        Toggle("Final answer correct", isOn: $draft.grades[index].isAnswerCorrect)
+                        Toggle("Work process correct", isOn: $draft.grades[index].isProcessCorrect)
+                        Toggle("Needs review", isOn: $draft.grades[index].needsReview)
 
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Feedback")
                                 .font(.footnote.weight(.semibold))
-                            TextEditor(text: $grade.feedback)
+                            TextEditor(text: $draft.grades[index].feedback)
                                 .frame(minHeight: 100)
-                            RenderedTextBlock(text: grade.feedback)
+                            RenderedPreviewButton(title: "\(draft.grades[index].displayLabel) Feedback Preview", text: draft.grades[index].feedback)
                         }
+                    } header: {
+                        GradeSectionHeader(
+                            title: draft.grades[index].displayLabel,
+                            isHighlighted: gradeNeedsHighlight(draft.grades[index])
+                        )
                     }
                 }
 
                 Section("Overall Notes") {
                     TextEditor(text: $draft.overallNotes)
                         .frame(minHeight: 120)
-                    RenderedTextBlock(text: draft.overallNotes)
+                    RenderedPreviewButton(title: "Overall Notes Preview", text: draft.overallNotes)
                 }
             }
             .navigationTitle(draft.studentName.isEmpty ? "Saved Result" : draft.studentName)
@@ -1161,6 +1399,7 @@ private struct SavedSubmissionDetailView: View {
     private func saveChanges() {
         let normalized = draft.normalized(integerPointsOnly: integerPointsOnly)
         submission.studentName = normalized.studentName.trimmingCharacters(in: .whitespacesAndNewlines)
+        submission.nameNeedsReview = normalized.nameNeedsReview
         submission.overallNotes = normalized.overallNotes.trimmingCharacters(in: .whitespacesAndNewlines)
         submission.teacherReviewed = true
         submission.setQuestionGrades(normalized.grades)
@@ -1200,22 +1439,52 @@ private struct RubricQuestionDetailView: View {
             Section("Prompt") {
                 TextEditor(text: $question.promptText)
                     .frame(minHeight: 140)
-                RenderedTextBlock(text: question.promptText)
+                RenderedPreviewButton(title: "Prompt Preview", text: question.promptText)
             }
 
             Section("Ideal Answer") {
                 TextEditor(text: $question.idealAnswer)
                     .frame(minHeight: 160)
-                RenderedTextBlock(text: question.idealAnswer)
+                RenderedPreviewButton(title: "Ideal Answer Preview", text: question.idealAnswer)
             }
 
             Section("Grading Criteria") {
                 TextEditor(text: $question.gradingCriteria)
                     .frame(minHeight: 160)
-                RenderedTextBlock(text: question.gradingCriteria)
+                RenderedPreviewButton(title: "Grading Criteria Preview", text: question.gradingCriteria)
             }
         }
         .navigationTitle(question.displayLabel)
+        .navigationBarTitleDisplayMode(.inline)
+        .onDisappear {
+            try? modelContext.save()
+        }
+        .keyboardDismissToolbar()
+    }
+}
+
+private struct OverallRulesEditorView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Bindable var session: GradingSession
+
+    var body: some View {
+        Form {
+            Section("Overall Grading Rules") {
+                TextEditor(
+                    text: Binding(
+                        get: { session.overallGradingRules ?? "" },
+                        set: { newValue in
+                            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                            session.overallGradingRules = trimmed.isEmpty ? nil : newValue
+                        }
+                    )
+                )
+                .frame(minHeight: 180)
+
+                RenderedPreviewButton(title: "Overall Rules Preview", text: session.overallGradingRules ?? "")
+            }
+        }
+        .navigationTitle("Overall Rules")
         .navigationBarTitleDisplayMode(.inline)
         .onDisappear {
             try? modelContext.save()
@@ -1242,11 +1511,60 @@ private struct SubmissionRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            if submission.nameNeedsReviewEnabled {
+                StatusChip(label: "Name Review", color: .orange)
+            }
+
+            if submission.totalScore + 0.001 < submission.maxScore {
+                StatusChip(label: "Not Full Score", color: .red)
+            }
+
             if submission.questionGrades().contains(where: \.needsReview) {
                 StatusChip(label: "Review Needed", color: .orange)
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+private func gradeNeedsHighlight(_ grade: QuestionGradeRecord) -> Bool {
+    grade.needsReview || grade.awardedPoints + 0.001 < grade.maxPoints
+}
+
+private struct GradeSectionHeader: View {
+    let title: String
+    let isHighlighted: Bool
+
+    var body: some View {
+        HStack {
+            Text(title)
+            if isHighlighted {
+                Spacer()
+                Text("Review")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.orange.opacity(0.18), in: Capsule())
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+}
+
+private struct HighlightNotice: View {
+    let message: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundStyle(color)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+        }
+        .padding(12)
+        .background(color.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
@@ -1406,16 +1724,80 @@ private struct ImageStripView: View {
 
 private struct RenderedTextBlock: View {
     let text: String
+    var maxPreviewHeight: CGFloat? = 260
     @State private var contentHeight: CGFloat = 44
 
     var body: some View {
-        MathRenderedTextView(text: text, contentHeight: $contentHeight)
-            .frame(minHeight: max(contentHeight, 44), maxHeight: max(contentHeight, 44))
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(.white)
-            )
+        VStack(alignment: .leading, spacing: 8) {
+            MathRenderedTextView(text: text, contentHeight: $contentHeight)
+                .frame(height: previewHeight)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            if let maxPreviewHeight, contentHeight > maxPreviewHeight {
+                Text("Scroll to view more")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.top, 12)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.white)
+        )
+    }
+
+    private var previewHeight: CGFloat {
+        let naturalHeight = max(contentHeight + 28, 84)
+        if let maxPreviewHeight {
+            return min(naturalHeight, maxPreviewHeight)
+        }
+        return naturalHeight
+    }
+}
+
+private struct RenderedPreviewButton: View {
+    let title: String
+    let text: String
+    @State private var showingPreview = false
+
+    var body: some View {
+        Button {
+            showingPreview = true
+        } label: {
+            Label("Preview Render", systemImage: "text.viewfinder")
+                .font(.subheadline)
+        }
+        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .sheet(isPresented: $showingPreview) {
+            RenderedPreviewSheet(title: title, text: text)
+        }
+    }
+}
+
+private struct RenderedPreviewSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let title: String
+    let text: String
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                RenderedTextBlock(text: text, maxPreviewHeight: nil)
+                    .padding(20)
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1438,7 +1820,10 @@ private struct MathRenderedTextView: UIViewRepresentable {
         webView.isOpaque = false
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
-        webView.scrollView.isScrollEnabled = false
+        webView.scrollView.isScrollEnabled = true
+        webView.scrollView.showsVerticalScrollIndicator = true
+        webView.scrollView.showsHorizontalScrollIndicator = false
+        webView.scrollView.bounces = true
         webView.navigationDelegate = context.coordinator
         return webView
     }
@@ -1455,7 +1840,8 @@ private struct MathRenderedTextView: UIViewRepresentable {
     }
 
     private func htmlDocument(for text: String) -> String {
-        let escaped = text
+        let normalized = normalizeMathPreviewText(text)
+        let escaped = normalized
             .replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
@@ -1481,33 +1867,82 @@ private struct MathRenderedTextView: UIViewRepresentable {
             .wrap {
               width: 100%;
               background: transparent;
+              padding: 2px 0 10px 0;
+              overflow-wrap: anywhere;
             }
             p { margin: 0 0 0.9em 0; }
-            mjx-container { margin: 0.35em 0 !important; }
+            mjx-container {
+              margin: 0.15em 0 !important;
+              overflow-x: auto;
+              overflow-y: visible;
+              max-width: 100%;
+            }
+            mjx-container[display="true"] {
+              display: block !important;
+              margin: 0.55em 0 !important;
+            }
+            mjx-container[jax="CHTML"] {
+              white-space: normal !important;
+            }
           </style>
           <script>
             window.MathJax = {
               tex: {
                 inlineMath: [['$', '$'], ['\\\\(', '\\\\)']],
-                displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']]
+                displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']],
+                processEscapes: true
               },
-              svg: { fontCache: 'global' }
+              options: {
+                skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+              },
+              chtml: {
+                scale: 1
+              },
+              startup: {
+                typeset: false
+              }
             };
 
             function reportHeight() {
-              const height = Math.max(
-                document.body.scrollHeight,
-                document.documentElement.scrollHeight
-              );
+              const content = document.getElementById('content');
+              const rectHeight = content ? content.getBoundingClientRect().height : 0;
+              const scrollHeight = content ? content.scrollHeight : 0;
+              const height = Math.max(rectHeight, scrollHeight, 44);
               window.webkit.messageHandlers.contentHeight.postMessage(height);
+            }
+
+            function installHeightObservers() {
+              if (window.__heightObserversInstalled) return;
+              window.__heightObserversInstalled = true;
+
+              if (window.ResizeObserver) {
+                const ro = new ResizeObserver(function() {
+                  reportHeight();
+                });
+                ro.observe(document.body);
+                ro.observe(document.documentElement);
+              }
+
+              const mo = new MutationObserver(function() {
+                reportHeight();
+              });
+              mo.observe(document.body, { childList: true, subtree: true, characterData: true });
+
+              window.addEventListener('resize', reportHeight);
+            }
+
+            function burstHeightReports() {
+              [0, 40, 120, 250, 500, 900, 1400].forEach(function(delay) {
+                setTimeout(reportHeight, delay);
+              });
             }
 
             function waitForMathJax(retries) {
               if (window.MathJax && window.MathJax.typesetPromise) {
-                MathJax.typesetPromise().then(function() {
-                  setTimeout(reportHeight, 60);
+                MathJax.typesetPromise([document.getElementById('content')]).then(function() {
+                  burstHeightReports();
                 }).catch(function() {
-                  setTimeout(reportHeight, 60);
+                  burstHeightReports();
                 });
                 return;
               }
@@ -1517,21 +1952,101 @@ private struct MathRenderedTextView: UIViewRepresentable {
                   waitForMathJax(retries - 1);
                 }, 75);
               } else {
-                setTimeout(reportHeight, 60);
+                burstHeightReports();
               }
             }
 
             window.addEventListener('load', function() {
+              installHeightObservers();
               waitForMathJax(80);
             });
           </script>
-          <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+          <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
         </head>
         <body>
-          <div class="wrap">\(escaped)</div>
+          <div id="content" class="wrap">\(escaped)</div>
         </body>
         </html>
         """
+    }
+
+    private func normalizeMathPreviewText(_ text: String) -> String {
+        let unicodeDecoded = decodeUnicodeEscapes(in: text)
+        let normalized = unicodeDecoded
+            .replacingOccurrences(of: "\\\\(", with: "\\(")
+            .replacingOccurrences(of: "\\\\)", with: "\\)")
+            .replacingOccurrences(of: "\\\\[", with: "\\[")
+            .replacingOccurrences(of: "\\\\]", with: "\\]")
+            .replacingOccurrences(of: "\\rac", with: "\\frac")
+            .replacingOccurrences(of: "\\\\frac", with: "\\frac")
+            .replacingOccurrences(of: "\\\\cdot", with: "\\cdot")
+            .replacingOccurrences(of: "\\\\times", with: "\\times")
+            .replacingOccurrences(of: "\\\\left", with: "\\left")
+            .replacingOccurrences(of: "\\\\right", with: "\\right")
+            .replacingOccurrences(of: "\\\\tilde", with: "\\tilde")
+
+        return trimWhitespaceInsideMathDelimiters(in: normalized)
+    }
+
+    private func decodeUnicodeEscapes(in text: String) -> String {
+        var result = ""
+        var index = text.startIndex
+
+        while index < text.endIndex {
+            if text[index] == "\\",
+               let uIndex = text.index(index, offsetBy: 1, limitedBy: text.endIndex),
+               uIndex < text.endIndex,
+               text[uIndex] == "u" {
+                let hexStart = text.index(after: uIndex)
+                let hexEnd = text.index(hexStart, offsetBy: 4, limitedBy: text.endIndex) ?? text.endIndex
+                let hex = String(text[hexStart..<hexEnd])
+
+                if hex.count == 4,
+                   let scalarValue = UInt32(hex, radix: 16),
+                   let scalar = UnicodeScalar(scalarValue) {
+                    result.unicodeScalars.append(scalar)
+                    index = hexEnd
+                    continue
+                }
+            }
+
+            result.append(text[index])
+            index = text.index(after: index)
+        }
+
+        return result
+    }
+
+    private func trimWhitespaceInsideMathDelimiters(in text: String) -> String {
+        var output = text
+        output = replaceDelimitedMath(in: output, pattern: #"\$\$(.+?)\$\$"#, prefix: "$$", suffix: "$$")
+        output = replaceDelimitedMath(in: output, pattern: #"\$(?!\$)(.+?)(?<!\$)\$"#, prefix: "$", suffix: "$")
+        output = replaceDelimitedMath(in: output, pattern: #"\\\((.+?)\\\)"#, prefix: "\\(", suffix: "\\)")
+        output = replaceDelimitedMath(in: output, pattern: #"\\\[(.+?)\\\]"#, prefix: "\\[", suffix: "\\]")
+        return output
+    }
+
+    private func replaceDelimitedMath(in text: String, pattern: String, prefix: String, suffix: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else {
+            return text
+        }
+
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+        guard !matches.isEmpty else { return text }
+
+        var result = text
+
+        for match in matches.reversed() {
+            guard match.numberOfRanges >= 2 else { continue }
+            let body = nsText.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+            let replacement = prefix + body + suffix
+            if let range = Range(match.range, in: result) {
+                result.replaceSubrange(range, with: replacement)
+            }
+        }
+
+        return result
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
@@ -1557,7 +2072,7 @@ private struct MathRenderedTextView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            webView.evaluateJavaScript("reportHeight();", completionHandler: nil)
+            webView.evaluateJavaScript("installHeightObservers(); waitForMathJax(80); burstHeightReports();", completionHandler: nil)
         }
     }
 }

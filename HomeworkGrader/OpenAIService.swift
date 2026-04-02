@@ -148,20 +148,38 @@ final class OpenAIService {
         apiKey: String,
         modelID: String,
         rubric: [RubricSnapshot],
+        overallRules: String?,
         pageData: [Data],
         integerPointsOnly: Bool,
+        relaxedGradingMode: Bool,
+        previousGrading: SubmissionPayload? = nil,
+        validatorFeedback: GradingValidationPayload? = nil,
         reasoningEffort: String?,
         verbosity: String?,
         serviceTier: String?
     ) async throws -> OpenAIResult<SubmissionPayload> {
         let rubricData = try JSONEncoder.prettyPrinted.encode(rubric)
         let rubricString = String(decoding: rubricData, as: UTF8.self)
+        let previousGradingString: String?
+        if let previousGrading {
+            previousGradingString = String(decoding: try JSONEncoder.prettyPrinted.encode(previousGrading), as: UTF8.self)
+        } else {
+            previousGradingString = nil
+        }
+
+        let validatorFeedbackString: String?
+        if let validatorFeedback {
+            validatorFeedbackString = String(decoding: try JSONEncoder.prettyPrinted.encode(validatorFeedback), as: UTF8.self)
+        } else {
+            validatorFeedbackString = nil
+        }
 
         let schema: [String: Any] = [
             "type": "object",
             "additionalProperties": false,
             "properties": [
                 "student_name": ["type": "string"],
+                "student_name_needs_review": ["type": "boolean"],
                 "question_results": [
                     "type": "array",
                     "items": [
@@ -189,32 +207,119 @@ final class OpenAIService {
                 ],
                 "overall_notes": ["type": "string"],
             ],
-            "required": ["student_name", "question_results", "overall_notes"],
+            "required": ["student_name", "student_name_needs_review", "question_results", "overall_notes"],
         ]
 
         let systemPrompt = """
         You are grading a student's work using a teacher-approved rubric.
         Read the student's handwritten or printed work from the attached page images.
         Return the student's name if visible. If it is missing or unreadable, return an empty string.
+        For the student name, compare character by character and be strict about exact matches. If any character is unclear or uncertain, return the best candidate name and set student_name_needs_review=true.
         Award partial credit when justified.
         Evaluate both the final answer and the work process for each rubric item.
+        Also check for mathematically equivalent answer forms that should still receive credit. Do not mark a grading wrong only because the student's answer is written in a different but equivalent form.
         Use only the question ids supplied in the rubric.
         Keep max_points aligned with the rubric values exactly.
         Mark needs_review=true whenever handwriting, ambiguity, missing work, or rubric mismatch makes the grade uncertain.
+        \(relaxedGradingMode ? "Relaxed grading mode is ON. If the student's final answer for a question is correct, award full credit for that question even if the intermediate work is minimal, omitted, or imperfect. Do not require many intermediate steps for full credit when the final answer is correct, unless the rubric explicitly requires process-based scoring." : "")
+        In feedback and overall_notes:
+        - keep normal prose as plain text
+        - wrap every mathematical expression in $...$
+        - use only valid standard LaTeX inside those delimiters
+        - do not output malformed LaTeX
+        - if you are unsure how to write an expression in LaTeX, use plain text instead of broken LaTeX
         \(integerPointsOnly ? "Award only whole-number scores. awarded_points and max_points must be integers with no decimals." : "Fractional scores are allowed when justified by the rubric.")
         """
 
         let userText = """
         Grade this student submission against the rubric below.
 
+        SESSION-WIDE GRADING RULES:
+        \(overallRules?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? overallRules! : "None provided.")
+
         RUBRIC JSON:
         \(rubricString)
+        \(previousGradingString.map { "\n\nPREVIOUS GRADING JSON:\n\($0)" } ?? "")
+        \(validatorFeedbackString.map { "\n\nVALIDATION FEEDBACK JSON:\n\($0)\n\nIf the validator found issues, correct them and return a revised grading." } ?? "")
         """
 
         return try await performStructuredRequest(
             apiKey: apiKey,
             modelID: modelID,
             schemaName: "graded_submission",
+            schema: schema,
+            systemPrompt: systemPrompt,
+            userText: userText,
+            images: pageData,
+            reasoningEffort: reasoningEffort,
+            verbosity: verbosity,
+            serviceTier: serviceTier
+        )
+    }
+
+    func validateSubmissionGrade(
+        apiKey: String,
+        modelID: String,
+        rubric: [RubricSnapshot],
+        overallRules: String?,
+        candidateGrading: SubmissionPayload,
+        pageData: [Data],
+        integerPointsOnly: Bool,
+        relaxedGradingMode: Bool,
+        reasoningEffort: String?,
+        verbosity: String?,
+        serviceTier: String?
+    ) async throws -> OpenAIResult<GradingValidationPayload> {
+        let rubricString = String(decoding: try JSONEncoder.prettyPrinted.encode(rubric), as: UTF8.self)
+        let candidateString = String(decoding: try JSONEncoder.prettyPrinted.encode(candidateGrading), as: UTF8.self)
+
+        let schema: [String: Any] = [
+            "type": "object",
+            "additionalProperties": false,
+            "properties": [
+                "is_grading_correct": ["type": "boolean"],
+                "validator_summary": ["type": "string"],
+                "issues": [
+                    "type": "array",
+                    "items": ["type": "string"],
+                ],
+            ],
+            "required": ["is_grading_correct", "validator_summary", "issues"],
+        ]
+
+        let systemPrompt = """
+        You are validating a grading decision for a student's submission.
+        Review the student work from the attached images, the rubric, the session-wide grading rules, and the candidate grading JSON.
+        Return is_grading_correct=true only if the candidate grading is correct.
+        Return false if any awarded points, correctness flags, process judgment, or review flags should change.
+        Be critical of OCR or reading mistakes. Check carefully for text mismatches, symbol mismatches, copied-answer mismatches, and especially student-name mismatches.
+        For the student name, verify character by character.
+        If the candidate name seems plausible but one or more characters are uncertain, student_name_needs_review should be true.
+        Do not fail validation only because the name is uncertain if the candidate grading correctly marks the name for human review.
+        Fail validation if the name appears materially wrong, or if the name is uncertain but the candidate grading failed to flag student_name_needs_review.
+        Also check for mathematically equivalent answer forms that should still receive credit. Do not mark a grading wrong only because the student's answer is written in a different but equivalent form.
+        Keep validator_summary concise and actionable so it can be used to regrade the submission if needed.
+        \(relaxedGradingMode ? "Relaxed grading mode is ON. A correct final answer should receive full credit even if intermediate work is minimal, omitted, or imperfect, unless the rubric explicitly requires process-based scoring." : "")
+        \(integerPointsOnly ? "Scores must remain whole numbers." : "Fractional scores are allowed when justified by the rubric.")
+        """
+
+        let userText = """
+        Validate the candidate grading below.
+
+        SESSION-WIDE GRADING RULES:
+        \(overallRules?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? overallRules! : "None provided.")
+
+        RUBRIC JSON:
+        \(rubricString)
+
+        CANDIDATE GRADING JSON:
+        \(candidateString)
+        """
+
+        return try await performStructuredRequest(
+            apiKey: apiKey,
+            modelID: modelID,
+            schemaName: "grading_validation",
             schema: schema,
             systemPrompt: systemPrompt,
             userText: userText,
@@ -462,6 +567,18 @@ final class OpenAIService {
 
 private struct SimpleValidationPayload: Decodable {
     let ok: Bool
+}
+
+struct GradingValidationPayload: Codable {
+    let isGradingCorrect: Bool
+    let validatorSummary: String
+    let issues: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case isGradingCorrect = "is_grading_correct"
+        case validatorSummary = "validator_summary"
+        case issues
+    }
 }
 
 private struct ModelPricing {
