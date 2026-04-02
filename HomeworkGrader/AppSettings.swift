@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import Security
 
 enum AppSecrets {
@@ -54,5 +55,23 @@ final class KeychainStore {
         ]
 
         return SecItemDelete(query as CFDictionary)
+    }
+}
+
+enum APIKeyIdentity {
+    static func fingerprint(for apiKey: String) -> String? {
+        let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let digest = SHA256.hash(data: Data(trimmed.utf8))
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        return String(hex.prefix(16))
+    }
+}
+
+enum CostFormatting {
+    static func usdString(_ value: Double?) -> String {
+        let amount = value ?? 0
+        return amount.formatted(.currency(code: "USD"))
     }
 }

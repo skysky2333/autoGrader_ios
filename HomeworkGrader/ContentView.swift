@@ -1,6 +1,8 @@
 import SwiftUI
 import SwiftData
+import UIKit
 import VisionKit
+import WebKit
 
 struct ContentView: View {
     @Query(sort: \GradingSession.createdAt, order: .reverse) private var sessions: [GradingSession]
@@ -72,6 +74,14 @@ struct ContentView: View {
     }
 }
 
+private enum SessionSectionTab: String, CaseIterable, Identifiable {
+    case overview = "Overview"
+    case rubric = "Rubric"
+    case results = "Results"
+
+    var id: String { rawValue }
+}
+
 private struct SessionRow: View {
     let session: GradingSession
 
@@ -94,6 +104,10 @@ private struct SessionRow: View {
                 .foregroundStyle(.secondary)
 
             Text("\(session.sortedQuestions.count) questions • \(session.sortedSubmissions.count) submissions")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Text("API cost: \(session.sessionCostLabel)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -159,10 +173,12 @@ private struct NewSessionSheet: View {
     }
 
     private func createSession() {
+        let currentKey = KeychainStore.shared.string(for: AppSecrets.openAIKey) ?? ""
         let session = GradingSession(
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             answerModelID: answerModel.trimmingCharacters(in: .whitespacesAndNewlines),
             gradingModelID: gradingModel.trimmingCharacters(in: .whitespacesAndNewlines),
+            apiKeyFingerprint: APIKeyIdentity.fingerprint(for: currentKey),
             integerPointsOnly: integerPointsOnly
         )
         modelContext.insert(session)
@@ -173,9 +189,11 @@ private struct NewSessionSheet: View {
 
 private struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Query(sort: \GradingSession.createdAt, order: .reverse) private var sessions: [GradingSession]
     @State private var apiKey = KeychainStore.shared.string(for: AppSecrets.openAIKey) ?? ""
     @State private var statusMessage = ""
     @State private var isTesting = false
+    @State private var costState: OrganizationCostState = .idle
 
     var body: some View {
         NavigationStack {
@@ -196,9 +214,48 @@ private struct SettingsView: View {
                     }
                 }
 
+                Section("API Cost") {
+                    LabeledContent("Tracked in this app", value: CostFormatting.usdString(trackedAppCost))
+
+                    switch costState {
+                    case .idle:
+                        Text("OpenAI organization cost has not been fetched yet.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    case .loading:
+                        HStack {
+                            ProgressView()
+                            Text("Loading organization cost...")
+                                .foregroundStyle(.secondary)
+                        }
+                    case .loaded(let summary):
+                        LabeledContent("OpenAI organization total", value: CostFormatting.usdString(summary.totalCostUSD))
+                        Text("Fetched \(summary.fetchedAt.formatted(date: .abbreviated, time: .shortened)).")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    case .unavailable(let message):
+                        Text(message)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Button(costState == .loading ? "Refreshing..." : "Refresh OpenAI Cost") {
+                        Task {
+                            await refreshOrganizationCost()
+                        }
+                    }
+                    .disabled(costState == .loading || trimmedAPIKey.isEmpty)
+
+                    Text("The OpenAI organization cost endpoint may require an admin API key. The tracked in-app total is based on this app's own graded sessions for the current key.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Actions") {
                     Button("Save Key") {
-                        saveKey()
+                        Task {
+                            await saveKey()
+                        }
                     }
 
                     Button(isTesting ? "Testing..." : "Test Key") {
@@ -217,6 +274,11 @@ private struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .task {
+                if trimmedAPIKey.isEmpty { return }
+                guard costState == .idle else { return }
+                await refreshOrganizationCost()
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
@@ -227,10 +289,25 @@ private struct SettingsView: View {
         }
     }
 
-    private func saveKey() {
-        let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        KeychainStore.shared.setString(trimmed, for: AppSecrets.openAIKey)
-        statusMessage = trimmed.isEmpty ? "API key cleared." : "API key saved."
+    private var trimmedAPIKey: String {
+        apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trackedAppCost: Double {
+        guard let fingerprint = APIKeyIdentity.fingerprint(for: trimmedAPIKey) else { return 0 }
+        return sessions
+            .filter { $0.apiKeyFingerprint == fingerprint }
+            .reduce(0) { $0 + ($1.estimatedCostUSD ?? 0) }
+    }
+
+    @MainActor
+    private func saveKey() async {
+        KeychainStore.shared.setString(trimmedAPIKey, for: AppSecrets.openAIKey)
+        statusMessage = trimmedAPIKey.isEmpty ? "API key cleared." : "API key saved."
+        costState = .idle
+        if !trimmedAPIKey.isEmpty {
+            await refreshOrganizationCost()
+        }
     }
 
     @MainActor
@@ -245,6 +322,23 @@ private struct SettingsView: View {
             statusMessage = error.localizedDescription
         }
     }
+
+    @MainActor
+    private func refreshOrganizationCost() async {
+        guard !trimmedAPIKey.isEmpty else {
+            costState = .idle
+            return
+        }
+
+        costState = .loading
+
+        do {
+            let summary = try await OpenAIService.shared.fetchOrganizationTotalCost(apiKey: trimmedAPIKey)
+            costState = .loaded(summary)
+        } catch {
+            costState = .unavailable(error.localizedDescription)
+        }
+    }
 }
 
 private struct SessionDetailView: View {
@@ -253,6 +347,7 @@ private struct SessionDetailView: View {
 
     @State private var showingMasterScanner = false
     @State private var showingStudentScanner = false
+    @State private var selectedTab: SessionSectionTab = .overview
     @State private var rubricReviewState: RubricReviewState?
     @State private var submissionDraft: SubmissionDraft?
     @State private var selectedSubmission: StudentSubmission?
@@ -262,73 +357,95 @@ private struct SessionDetailView: View {
 
     var body: some View {
         Form {
-            Section("Overview") {
-                LabeledContent("Answer model", value: session.answerModelID)
-                LabeledContent("Grading model", value: session.gradingModelID)
-                LabeledContent("Point mode", value: session.pointModeLabel)
-                LabeledContent("Questions", value: "\(session.sortedQuestions.count)")
-                LabeledContent("Saved submissions", value: "\(session.sortedSubmissions.count)")
-                LabeledContent("Total points", value: ScoreFormatting.scoreString(session.totalPossiblePoints))
-
-                Toggle("Integer points only", isOn: integerPointsOnlyBinding)
-                Toggle("Session ended", isOn: $session.isFinished)
+            Section {
+                Picker("Section", selection: $selectedTab) {
+                    ForEach(SessionSectionTab.allCases) { tab in
+                        Text(tab.rawValue).tag(tab)
+                    }
+                }
+                .pickerStyle(.segmented)
             }
 
-            if session.questions.isEmpty {
-                Section("Blank Assignment") {
-                    Button {
-                        startMasterScan()
-                    } label: {
-                        Label("Scan Blank Assignment", systemImage: "doc.viewfinder")
-                    }
-                    .disabled(!hasAPIKey)
+            if selectedTab == .overview {
+                Section("Overview") {
+                    LabeledContent("Answer model", value: session.answerModelID)
+                    LabeledContent("Grading model", value: session.gradingModelID)
+                    LabeledContent("Point mode", value: session.pointModeLabel)
+                    LabeledContent("Questions", value: "\(session.sortedQuestions.count)")
+                    LabeledContent("Saved submissions", value: "\(session.sortedSubmissions.count)")
+                    LabeledContent("Total points", value: ScoreFormatting.scoreString(session.totalPossiblePoints))
+                    LabeledContent("API cost", value: session.sessionCostLabel)
 
-                    Text(hasAPIKey ? "Scan the teacher copy or blank exam pages, then review the generated rubric before grading students." : "Add your API key in Settings first.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    Toggle("Integer points only", isOn: integerPointsOnlyBinding)
+                    Toggle("Session ended", isOn: $session.isFinished)
                 }
-            } else {
-                Section("Approved Rubric") {
-                    if !session.masterScans().isEmpty {
+
+                if session.questions.isEmpty {
+                    Section("Blank Assignment") {
+                        Button {
+                            startMasterScan()
+                        } label: {
+                            Label("Scan Blank Assignment", systemImage: "doc.viewfinder")
+                        }
+                        .disabled(!hasAPIKey)
+
+                        Text(hasAPIKey ? "Scan the teacher copy or blank exam pages, then review the generated rubric before grading students." : "Add your API key in Settings first.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Section("Grade Next Student") {
+                        Button {
+                            startStudentScan()
+                        } label: {
+                            Label("Scan Student Submission", systemImage: "camera.viewfinder")
+                        }
+                        .disabled(!hasAPIKey || session.isFinished)
+
+                        Text(session.isFinished ? "This session is marked as ended. Turn off Session ended to grade more submissions." : "Capture all pages for one student, review the result, save it, and then scan the next student.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            if selectedTab == .rubric {
+                if session.questions.isEmpty {
+                    Section("Rubric") {
+                        Text("No rubric yet. Scan the blank assignment from the Overview tab first.")
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Section("Master Pages") {
                         ImageStripView(pageData: session.masterScans())
                     }
 
-                    ForEach(session.sortedQuestions) { question in
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text(question.displayLabel)
-                                    .font(.headline)
-                                Spacer()
-                                Text("\(ScoreFormatting.scoreString(question.maxPoints)) pts")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+                    Section("Questions") {
+                        ForEach(session.sortedQuestions) { question in
+                            NavigationLink {
+                                RubricQuestionDetailView(question: question)
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(question.displayLabel)
+                                            .font(.headline)
+                                        Text(question.promptText)
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(2)
+                                    }
+                                    Spacer()
+                                    Text("\(ScoreFormatting.scoreString(question.maxPoints)) pts")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(.vertical, 4)
                             }
-
-                            Text(question.promptText)
-                                .font(.subheadline)
-
-                            Text(question.idealAnswer)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(3)
                         }
-                        .padding(.vertical, 4)
                     }
                 }
+            }
 
-                Section("Grade Next Student") {
-                    Button {
-                        startStudentScan()
-                    } label: {
-                        Label("Scan Student Submission", systemImage: "camera.viewfinder")
-                    }
-                    .disabled(!hasAPIKey || session.isFinished)
-
-                    Text(session.isFinished ? "This session is marked as ended. Turn off Session ended to grade more submissions." : "Capture all pages for one student, review the result, save it, and then scan the next student.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
+            if selectedTab == .results {
                 Section("Saved Results") {
                     if session.sortedSubmissions.isEmpty {
                         Text("No student submissions saved yet.")
@@ -470,19 +587,21 @@ private struct SessionDetailView: View {
         defer { busyMessage = nil }
 
         do {
-            let payload = try await OpenAIService.shared.generateAnswerKey(
+            let result = try await OpenAIService.shared.generateAnswerKey(
                 apiKey: apiKey,
                 modelID: session.answerModelID,
                 sessionTitle: session.title,
                 pageData: pageData
             )
 
-            guard !payload.questions.isEmpty else {
+            recordUsage(result.usage, apiKey: apiKey)
+
+            guard !result.payload.questions.isEmpty else {
                 alertItem = AlertItem(message: "The model did not return any gradeable questions. Try rescanning the blank assignment.")
                 return
             }
 
-            rubricReviewState = .from(payload: payload, pageData: pageData, integerPointsOnly: session.integerPointsOnlyEnabled)
+            rubricReviewState = .from(payload: result.payload, pageData: pageData, integerPointsOnly: session.integerPointsOnlyEnabled)
                 .normalized(integerPointsOnly: session.integerPointsOnlyEnabled)
         } catch {
             alertItem = AlertItem(message: error.localizedDescription)
@@ -502,7 +621,7 @@ private struct SessionDetailView: View {
         defer { busyMessage = nil }
 
         do {
-            let payload = try await OpenAIService.shared.gradeSubmission(
+            let result = try await OpenAIService.shared.gradeSubmission(
                 apiKey: apiKey,
                 modelID: session.gradingModelID,
                 rubric: session.sortedQuestions.map(\.snapshot),
@@ -510,8 +629,10 @@ private struct SessionDetailView: View {
                 integerPointsOnly: session.integerPointsOnlyEnabled
             )
 
+            recordUsage(result.usage, apiKey: apiKey)
+
             submissionDraft = SubmissionDraft.from(
-                payload: payload,
+                payload: result.payload,
                 rubric: session.sortedQuestions,
                 pageData: pageData,
                 integerPointsOnly: session.integerPointsOnlyEnabled
@@ -569,6 +690,16 @@ private struct SessionDetailView: View {
         } catch {
             alertItem = AlertItem(message: "Unable to export CSV. \(error.localizedDescription)")
         }
+    }
+
+    private func recordUsage(_ usage: OpenAIUsageSummary?, apiKey: String) {
+        guard let usage else { return }
+
+        session.estimatedCostUSD = (session.estimatedCostUSD ?? 0) + usage.estimatedCostUSD
+        if session.apiKeyFingerprint == nil {
+            session.apiKeyFingerprint = APIKeyIdentity.fingerprint(for: apiKey)
+        }
+        try? modelContext.save()
     }
 
     private func normalizeSessionToIntegerPoints() {
@@ -811,8 +942,7 @@ private struct SavedSubmissionDetailView: View {
                                 }
                             }
 
-                            Text(grade.feedback)
-                                .font(.subheadline)
+                            RenderedTextBlock(text: grade.feedback)
                         }
                         .padding(.vertical, 4)
                     }
@@ -820,13 +950,46 @@ private struct SavedSubmissionDetailView: View {
 
                 if !submission.overallNotes.isEmpty {
                     Section("Overall Notes") {
-                        Text(submission.overallNotes)
+                        RenderedTextBlock(text: submission.overallNotes)
                     }
                 }
             }
             .navigationTitle(submission.studentName)
             .navigationBarTitleDisplayMode(.inline)
         }
+    }
+}
+
+private struct RubricQuestionDetailView: View {
+    let question: QuestionRubric
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(question.displayLabel)
+                        .font(.title2.weight(.semibold))
+                    Text("\(ScoreFormatting.scoreString(question.maxPoints)) points")
+                        .foregroundStyle(.secondary)
+                }
+
+                DetailCard(title: "Prompt") {
+                    RenderedTextBlock(text: question.promptText)
+                }
+
+                DetailCard(title: "Ideal Answer") {
+                    RenderedTextBlock(text: question.idealAnswer)
+                }
+
+                DetailCard(title: "Grading Criteria") {
+                    RenderedTextBlock(text: question.gradingCriteria)
+                }
+            }
+            .padding(20)
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle(question.displayLabel)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -881,38 +1044,297 @@ private struct ModelTextField: View {
     }
 }
 
+private struct DetailCard<Content: View>: View {
+    let title: String
+    let content: Content
+
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.headline)
+            content
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+    }
+}
+
 private struct ImageStripView: View {
     let pageData: [Data]
+    @State private var selectedImage: ZoomableImageItem?
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
                 ForEach(Array(pageData.enumerated()), id: \.offset) { index, data in
                     if let image = UIImage(data: data) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(Color(.secondarySystemBackground))
+                        Button {
+                            selectedImage = ZoomableImageItem(image: image, title: "Page \(index + 1)")
+                        } label: {
+                            VStack(alignment: .leading, spacing: 6) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .fill(Color(.secondarySystemBackground))
 
-                                Image(uiImage: image)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .padding(8)
+                                    Image(uiImage: image)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .padding(8)
+                                }
+                                .frame(width: 150, height: 200)
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .strokeBorder(.quaternary, lineWidth: 1)
+                                }
+                                Text("Page \(index + 1)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
-                            .frame(width: 150, height: 200)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 14)
-                                    .strokeBorder(.quaternary, lineWidth: 1)
-                            }
-                            Text("Page \(index + 1)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }
             .padding(.vertical, 4)
+        }
+        .fullScreenCover(item: $selectedImage) { item in
+            FullScreenImageViewer(item: item)
+        }
+    }
+}
+
+private struct RenderedTextBlock: View {
+    let text: String
+    @State private var contentHeight: CGFloat = 44
+
+    var body: some View {
+        MathRenderedTextView(text: text, contentHeight: $contentHeight)
+            .frame(minHeight: max(contentHeight, 44), maxHeight: max(contentHeight, 44))
+    }
+}
+
+private struct MathRenderedTextView: UIViewRepresentable {
+    let text: String
+    @Binding var contentHeight: CGFloat
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(contentHeight: $contentHeight)
+    }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let controller = WKUserContentController()
+        controller.add(context.coordinator, name: "contentHeight")
+
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController = controller
+
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.isOpaque = false
+        webView.backgroundColor = .clear
+        webView.scrollView.backgroundColor = .clear
+        webView.scrollView.isScrollEnabled = false
+        webView.navigationDelegate = context.coordinator
+        return webView
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        let html = htmlDocument(for: text)
+        guard context.coordinator.lastHTML != html else { return }
+        context.coordinator.lastHTML = html
+        webView.loadHTMLString(html, baseURL: nil)
+    }
+
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "contentHeight")
+    }
+
+    private func htmlDocument(for text: String) -> String {
+        let escaped = text
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "\n", with: "<br/>")
+
+        return """
+        <!doctype html>
+        <html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+          <style>
+            body {
+              margin: 0;
+              padding: 0;
+              background: transparent;
+              color: #111827;
+              font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+              font-size: 17px;
+              line-height: 1.45;
+              overflow-wrap: break-word;
+            }
+            .wrap {
+              width: 100%;
+            }
+            p { margin: 0 0 0.9em 0; }
+            mjx-container { margin: 0.35em 0 !important; }
+          </style>
+          <script>
+            window.MathJax = {
+              tex: {
+                inlineMath: [['$', '$'], ['\\\\(', '\\\\)']],
+                displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']]
+              },
+              svg: { fontCache: 'global' }
+            };
+
+            function reportHeight() {
+              const height = Math.max(
+                document.body.scrollHeight,
+                document.documentElement.scrollHeight
+              );
+              window.webkit.messageHandlers.contentHeight.postMessage(height);
+            }
+
+            window.addEventListener('load', function() {
+              setTimeout(reportHeight, 50);
+            });
+          </script>
+          <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+        </head>
+        <body>
+          <div class="wrap">\(escaped)</div>
+          <script>
+            if (window.MathJax) {
+              MathJax.typesetPromise().then(function() {
+                setTimeout(reportHeight, 60);
+              }).catch(function() {
+                setTimeout(reportHeight, 60);
+              });
+            } else {
+              setTimeout(reportHeight, 60);
+            }
+          </script>
+        </body>
+        </html>
+        """
+    }
+
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+        @Binding var contentHeight: CGFloat
+        var lastHTML = ""
+
+        init(contentHeight: Binding<CGFloat>) {
+            _contentHeight = contentHeight
+        }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == "contentHeight" else { return }
+
+            if let height = message.body as? CGFloat {
+                DispatchQueue.main.async {
+                    self.contentHeight = max(height, 44)
+                }
+            } else if let height = message.body as? Double {
+                DispatchQueue.main.async {
+                    self.contentHeight = max(height, 44)
+                }
+            }
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            webView.evaluateJavaScript("reportHeight();", completionHandler: nil)
+        }
+    }
+}
+
+private struct ZoomableImageItem: Identifiable {
+    let id = UUID()
+    let image: UIImage
+    let title: String
+}
+
+private struct FullScreenImageViewer: View {
+    @Environment(\.dismiss) private var dismiss
+    let item: ZoomableImageItem
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+
+            ZoomableImageScrollView(image: item.image)
+                .ignoresSafeArea()
+
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 30))
+                    .foregroundStyle(.white.opacity(0.95))
+                    .padding()
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            Text(item.title)
+                .font(.headline)
+                .foregroundStyle(.white.opacity(0.9))
+                .padding()
+        }
+        .statusBarHidden()
+    }
+}
+
+private struct ZoomableImageScrollView: UIViewRepresentable {
+    let image: UIImage
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(image: image)
+    }
+
+    func makeUIView(context: Context) -> UIScrollView {
+        let scrollView = UIScrollView()
+        scrollView.delegate = context.coordinator
+        scrollView.maximumZoomScale = 6
+        scrollView.minimumZoomScale = 1
+        scrollView.bouncesZoom = true
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.backgroundColor = .black
+
+        let imageView = context.coordinator.imageView
+        imageView.image = image
+        imageView.contentMode = .scaleAspectFit
+        imageView.frame = scrollView.bounds
+        imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        scrollView.addSubview(imageView)
+
+        return scrollView
+    }
+
+    func updateUIView(_ uiView: UIScrollView, context: Context) {
+        context.coordinator.imageView.image = image
+        context.coordinator.imageView.frame = uiView.bounds
+    }
+
+    final class Coordinator: NSObject, UIScrollViewDelegate {
+        let imageView = UIImageView()
+
+        init(image: UIImage) {
+            super.init()
+            imageView.image = image
+        }
+
+        func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+            imageView
         }
     }
 }
@@ -957,4 +1379,11 @@ private struct AlertItem: Identifiable {
 private struct ShareItem: Identifiable {
     let id = UUID()
     let url: URL
+}
+
+private enum OrganizationCostState: Equatable {
+    case idle
+    case loading
+    case loaded(OrganizationCostSummary)
+    case unavailable(String)
 }

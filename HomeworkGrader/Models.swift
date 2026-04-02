@@ -22,6 +22,8 @@ final class GradingSession {
     var createdAt: Date
     var answerModelID: String
     var gradingModelID: String
+    var estimatedCostUSD: Double?
+    var apiKeyFingerprint: String?
     var integerPointsOnly: Bool?
     var isFinished: Bool
     var rubricApprovedAt: Date?
@@ -39,6 +41,8 @@ final class GradingSession {
         createdAt: Date = .now,
         answerModelID: String,
         gradingModelID: String,
+        estimatedCostUSD: Double? = nil,
+        apiKeyFingerprint: String? = nil,
         integerPointsOnly: Bool = false,
         isFinished: Bool = false,
         rubricApprovedAt: Date? = nil,
@@ -49,6 +53,8 @@ final class GradingSession {
         self.createdAt = createdAt
         self.answerModelID = answerModelID
         self.gradingModelID = gradingModelID
+        self.estimatedCostUSD = estimatedCostUSD
+        self.apiKeyFingerprint = apiKeyFingerprint
         self.integerPointsOnly = integerPointsOnly
         self.isFinished = isFinished
         self.rubricApprovedAt = rubricApprovedAt
@@ -154,6 +160,10 @@ extension GradingSession {
 
     var pointModeLabel: String {
         integerPointsOnlyEnabled ? "Integers only" : "Fractional allowed"
+    }
+
+    var sessionCostLabel: String {
+        CostFormatting.usdString(estimatedCostUSD)
     }
 
     func masterScans() -> [Data] {

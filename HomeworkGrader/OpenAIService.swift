@@ -20,11 +20,29 @@ enum OpenAIServiceError: LocalizedError {
     }
 }
 
+struct OpenAIUsageSummary {
+    let inputTokens: Int
+    let outputTokens: Int
+    let cachedInputTokens: Int
+    let estimatedCostUSD: Double
+}
+
+struct OpenAIResult<Payload> {
+    let payload: Payload
+    let usage: OpenAIUsageSummary?
+}
+
+struct OrganizationCostSummary: Equatable {
+    let totalCostUSD: Double
+    let fetchedAt: Date
+}
+
 final class OpenAIService {
     static let shared = OpenAIService()
 
     private let session: URLSession
     private let endpoint = URL(string: "https://api.openai.com/v1/responses")!
+    private let organizationCostsEndpoint = URL(string: "https://api.openai.com/v1/organization/costs")!
 
     init(session: URLSession = .shared) {
         self.session = session
@@ -42,7 +60,7 @@ final class OpenAIService {
             "required": ["ok"],
         ]
 
-        let _: SimpleValidationPayload = try await performStructuredRequest(
+        let _: OpenAIResult<SimpleValidationPayload> = try await performStructuredRequest(
             apiKey: apiKey,
             modelID: ModelCatalog.defaultGradingModel,
             schemaName: "api_key_validation",
@@ -58,7 +76,7 @@ final class OpenAIService {
         modelID: String,
         sessionTitle: String,
         pageData: [Data]
-    ) async throws -> MasterExamPayload {
+    ) async throws -> OpenAIResult<MasterExamPayload> {
         let schema: [String: Any] = [
             "type": "object",
             "additionalProperties": false,
@@ -126,7 +144,7 @@ final class OpenAIService {
         rubric: [RubricSnapshot],
         pageData: [Data],
         integerPointsOnly: Bool
-    ) async throws -> SubmissionPayload {
+    ) async throws -> OpenAIResult<SubmissionPayload> {
         let rubricData = try JSONEncoder.prettyPrinted.encode(rubric)
         let rubricString = String(decoding: rubricData, as: UTF8.self)
 
@@ -195,6 +213,56 @@ final class OpenAIService {
         )
     }
 
+    func fetchOrganizationTotalCost(apiKey: String) async throws -> OrganizationCostSummary {
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKey.isEmpty else { throw OpenAIServiceError.missingAPIKey }
+
+        var nextPage: String?
+        var total = 0.0
+        var pageCount = 0
+
+        repeat {
+            var components = URLComponents(url: organizationCostsEndpoint, resolvingAgainstBaseURL: false)
+            components?.queryItems = [
+                URLQueryItem(name: "start_time", value: "1577836800"),
+                URLQueryItem(name: "limit", value: "180"),
+            ]
+
+            if let nextPage {
+                components?.queryItems?.append(URLQueryItem(name: "page", value: nextPage))
+            }
+
+            guard let url = components?.url else {
+                throw OpenAIServiceError.invalidResponse("Unable to build the organization costs request.")
+            }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.timeoutInterval = 60
+            request.setValue("Bearer \(trimmedKey)", forHTTPHeaderField: "Authorization")
+
+            let (data, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw OpenAIServiceError.invalidResponse("OpenAI did not return an HTTP response.")
+            }
+
+            if !(200...299).contains(httpResponse.statusCode) {
+                let defaultMessage = httpResponse.statusCode == 401 || httpResponse.statusCode == 403
+                    ? "Organization-wide OpenAI costs require an admin API key."
+                    : "OpenAI returned HTTP \(httpResponse.statusCode)."
+                let message = parseErrorMessage(from: data) ?? defaultMessage
+                throw OpenAIServiceError.httpError(httpResponse.statusCode, message)
+            }
+
+            let page = try JSONDecoder().decode(OrganizationCostsPage.self, from: data)
+            total += page.data.flatMap(\.results).reduce(0) { $0 + $1.amount.value }
+            nextPage = page.nextPage
+            pageCount += 1
+        } while nextPage != nil && pageCount < 30
+
+        return OrganizationCostSummary(totalCostUSD: total, fetchedAt: .now)
+    }
+
     private func performStructuredRequest<T: Decodable>(
         apiKey: String,
         modelID: String,
@@ -203,7 +271,7 @@ final class OpenAIService {
         systemPrompt: String,
         userText: String,
         images: [Data]
-    ) async throws -> T {
+    ) async throws -> OpenAIResult<T> {
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedKey.isEmpty else { throw OpenAIServiceError.missingAPIKey }
 
@@ -277,7 +345,9 @@ final class OpenAIService {
         let decoder = JSONDecoder()
 
         do {
-            return try decoder.decode(T.self, from: payloadData)
+            let payload = try decoder.decode(T.self, from: payloadData)
+            let usage = extractUsage(from: rawResponse, modelID: modelID)
+            return OpenAIResult(payload: payload, usage: usage)
         } catch {
             throw OpenAIServiceError.invalidResponse("OpenAI returned JSON that did not match the expected schema. \(error.localizedDescription)")
         }
@@ -331,6 +401,29 @@ final class OpenAIService {
         return collected
     }
 
+    private func extractUsage(from response: [String: Any], modelID: String) -> OpenAIUsageSummary? {
+        guard let usage = response["usage"] as? [String: Any] else { return nil }
+
+        let inputTokens = usage["input_tokens"] as? Int ?? 0
+        let outputTokens = usage["output_tokens"] as? Int ?? 0
+        let inputDetails = usage["input_tokens_details"] as? [String: Any]
+        let cachedInputTokens = inputDetails?["cached_tokens"] as? Int ?? 0
+
+        let estimatedCostUSD = PricingCatalog.estimatedCostUSD(
+            modelID: modelID,
+            inputTokens: inputTokens,
+            outputTokens: outputTokens,
+            cachedInputTokens: cachedInputTokens
+        )
+
+        return OpenAIUsageSummary(
+            inputTokens: inputTokens,
+            outputTokens: outputTokens,
+            cachedInputTokens: cachedInputTokens,
+            estimatedCostUSD: estimatedCostUSD
+        )
+    }
+
     private func makeDataURL(for data: Data) -> String {
         "data:image/jpeg;base64,\(data.base64EncodedString())"
     }
@@ -346,4 +439,64 @@ private extension JSONEncoder {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return encoder
     }
+}
+
+private struct ModelPricing {
+    let inputPerMTokensUSD: Double
+    let cachedInputPerMTokensUSD: Double
+    let outputPerMTokensUSD: Double
+}
+
+private enum PricingCatalog {
+    static func estimatedCostUSD(modelID: String, inputTokens: Int, outputTokens: Int, cachedInputTokens: Int) -> Double {
+        guard let pricing = pricing(for: modelID) else { return 0 }
+
+        let uncachedInputTokens = max(inputTokens - cachedInputTokens, 0)
+        let inputCost = Double(uncachedInputTokens) / 1_000_000 * pricing.inputPerMTokensUSD
+        let cachedInputCost = Double(cachedInputTokens) / 1_000_000 * pricing.cachedInputPerMTokensUSD
+        let outputCost = Double(outputTokens) / 1_000_000 * pricing.outputPerMTokensUSD
+        return inputCost + cachedInputCost + outputCost
+    }
+
+    static func pricing(for modelID: String) -> ModelPricing? {
+        let normalized = modelID.lowercased()
+
+        if normalized.hasPrefix("gpt-5.4-mini") { return ModelPricing(inputPerMTokensUSD: 0.75, cachedInputPerMTokensUSD: 0.075, outputPerMTokensUSD: 4.50) }
+        if normalized.hasPrefix("gpt-5.4-nano") { return ModelPricing(inputPerMTokensUSD: 0.20, cachedInputPerMTokensUSD: 0.02, outputPerMTokensUSD: 1.25) }
+        if normalized.hasPrefix("gpt-5.4") { return ModelPricing(inputPerMTokensUSD: 2.50, cachedInputPerMTokensUSD: 0.25, outputPerMTokensUSD: 15.00) }
+        if normalized.hasPrefix("gpt-5.2-mini") { return ModelPricing(inputPerMTokensUSD: 0.40, cachedInputPerMTokensUSD: 0.04, outputPerMTokensUSD: 3.20) }
+        if normalized.hasPrefix("gpt-5.2-nano") { return ModelPricing(inputPerMTokensUSD: 0.10, cachedInputPerMTokensUSD: 0.01, outputPerMTokensUSD: 0.80) }
+        if normalized.hasPrefix("gpt-5.2") { return ModelPricing(inputPerMTokensUSD: 1.75, cachedInputPerMTokensUSD: 0.175, outputPerMTokensUSD: 14.00) }
+        if normalized.hasPrefix("gpt-5-mini") { return ModelPricing(inputPerMTokensUSD: 0.25, cachedInputPerMTokensUSD: 0.025, outputPerMTokensUSD: 2.00) }
+        if normalized.hasPrefix("gpt-5-nano") { return ModelPricing(inputPerMTokensUSD: 0.05, cachedInputPerMTokensUSD: 0.005, outputPerMTokensUSD: 0.40) }
+        if normalized.hasPrefix("gpt-5") { return ModelPricing(inputPerMTokensUSD: 1.25, cachedInputPerMTokensUSD: 0.125, outputPerMTokensUSD: 10.00) }
+        if normalized.hasPrefix("gpt-4.1-mini") { return ModelPricing(inputPerMTokensUSD: 0.40, cachedInputPerMTokensUSD: 0.10, outputPerMTokensUSD: 1.60) }
+        if normalized.hasPrefix("gpt-4.1") { return ModelPricing(inputPerMTokensUSD: 2.00, cachedInputPerMTokensUSD: 0.50, outputPerMTokensUSD: 8.00) }
+        if normalized.hasPrefix("gpt-4o-mini") { return ModelPricing(inputPerMTokensUSD: 0.15, cachedInputPerMTokensUSD: 0.075, outputPerMTokensUSD: 0.60) }
+        if normalized.hasPrefix("gpt-4o") { return ModelPricing(inputPerMTokensUSD: 2.50, cachedInputPerMTokensUSD: 1.25, outputPerMTokensUSD: 10.00) }
+
+        return nil
+    }
+}
+
+private struct OrganizationCostsPage: Decodable {
+    let data: [OrganizationCostsBucket]
+    let nextPage: String?
+
+    enum CodingKeys: String, CodingKey {
+        case data
+        case nextPage = "next_page"
+    }
+}
+
+private struct OrganizationCostsBucket: Decodable {
+    let results: [OrganizationCostResult]
+}
+
+private struct OrganizationCostResult: Decodable {
+    let amount: OrganizationCostAmount
+}
+
+private struct OrganizationCostAmount: Decodable {
+    let value: Double
 }
