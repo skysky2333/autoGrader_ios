@@ -1,0 +1,65 @@
+import XCTest
+@testable import HomeworkGrader
+
+final class HomeworkGraderTests: XCTestCase {
+    func testMasterPayloadDecodesExpectedQuestionCount() throws {
+        let json = """
+        {
+          "assignment_title": "Quiz 1",
+          "questions": [
+            {
+              "question_id": "q1",
+              "display_label": "Question 1",
+              "prompt_text": "2 + 2",
+              "ideal_answer": "4",
+              "grading_criteria": "Award full credit for 4.",
+              "page_references": [1]
+            },
+            {
+              "question_id": "q2",
+              "display_label": "Question 2",
+              "prompt_text": "State Newton's second law.",
+              "ideal_answer": "F = ma.",
+              "grading_criteria": "Require force, mass, and acceleration relationship.",
+              "page_references": [1]
+            }
+          ]
+        }
+        """
+
+        let payload = try JSONDecoder().decode(MasterExamPayload.self, from: Data(json.utf8))
+        XCTAssertEqual(payload.questions.count, 2)
+        XCTAssertEqual(payload.questions[0].questionId, "q1")
+    }
+
+    func testCSVExporterIncludesPerQuestionScores() throws {
+        let session = GradingSession(
+            title: "Biology Test",
+            answerModelID: "gpt-5.4",
+            gradingModelID: "gpt-5.4-mini"
+        )
+        let q1 = QuestionRubric(orderIndex: 0, questionID: "q1", displayLabel: "Q1", promptText: "Cell", idealAnswer: "Cell", gradingCriteria: "Name the organelle.", maxPoints: 2, session: session)
+        let q2 = QuestionRubric(orderIndex: 1, questionID: "q2", displayLabel: "Q2", promptText: "DNA", idealAnswer: "DNA", gradingCriteria: "Define DNA.", maxPoints: 3, session: session)
+        session.questions = [q1, q2]
+
+        let submission = StudentSubmission(
+            studentName: "Alex",
+            overallNotes: "Good work",
+            teacherReviewed: true,
+            totalScore: 4,
+            maxScore: 5,
+            session: session
+        )
+        submission.setQuestionGrades([
+            QuestionGradeRecord(questionID: "q1", displayLabel: "Q1", awardedPoints: 2, maxPoints: 2, isAnswerCorrect: true, isProcessCorrect: true, feedback: "Correct", needsReview: false),
+            QuestionGradeRecord(questionID: "q2", displayLabel: "Q2", awardedPoints: 2, maxPoints: 3, isAnswerCorrect: false, isProcessCorrect: true, feedback: "Missing detail", needsReview: true),
+        ])
+        session.submissions = [submission]
+
+        let csv = CSVExporter.csvString(for: session)
+
+        XCTAssertTrue(csv.contains("\"Alex\""))
+        XCTAssertTrue(csv.contains("\"2/2\""))
+        XCTAssertTrue(csv.contains("\"2/3\""))
+    }
+}
