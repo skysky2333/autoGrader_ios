@@ -3,6 +3,35 @@ import SwiftData
 import UIKit
 import VisionKit
 
+private enum ScanImagePreparation {
+    static func makeJPEGPageData(from images: [UIImage]) async -> [Data] {
+        await Task.detached(priority: .userInitiated) {
+            images.compactMap { image in
+                autoreleasepool {
+                    originalResolutionJPEGData(from: image)
+                }
+            }
+        }.value
+    }
+
+    private static func originalResolutionJPEGData(from image: UIImage) -> Data? {
+        let normalized = normalizedImage(from: image)
+        return normalized.jpegData(compressionQuality: 1.0)
+    }
+
+    private static func normalizedImage(from image: UIImage) -> UIImage {
+        guard image.imageOrientation != .up else { return image }
+
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = image.scale
+        format.opaque = true
+
+        return UIGraphicsImageRenderer(size: image.size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: image.size))
+        }
+    }
+}
+
 private enum SessionSectionTab: String, CaseIterable, Identifiable {
     case overview = "Overview"
     case rubric = "Rubric"
@@ -253,6 +282,50 @@ struct SessionDetailView: View {
 
     @ViewBuilder
     private var overviewSections: some View {
+        if session.questions.isEmpty {
+            Section("Blank Assignment") {
+                Button {
+                    startMasterScan()
+                } label: {
+                    Label("Scan Blank Assignment", systemImage: "doc.viewfinder")
+                }
+                .disabled(!hasAPIKey)
+
+                Text(hasAPIKey ? "Scan the teacher copy or blank exam pages, then review the generated rubric before grading students." : "Add your API key in Settings first.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            Section("Grade Next Student") {
+                Button {
+                    startStudentScan()
+                } label: {
+                    Label("Scan Student Submission", systemImage: "camera.viewfinder")
+                }
+                .disabled(!hasAPIKey || session.isFinished)
+
+                Button {
+                    startBatchStudentScan()
+                } label: {
+                    Label("Batch Scan Submissions", systemImage: "square.stack.3d.down.right")
+                }
+                .disabled(!hasAPIKey || session.isFinished)
+
+                if session.isFinished {
+                    Text("This session is marked as ended. Turn off Session ended to grade more submissions.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Single scan captures one student at a time, then opens the review screen before saving.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Text("Batch scan asks for pages per submission, uploads one asynchronous OpenAI batch job, and returns you to the app immediately. New submissions appear in Results as pending until that batch finishes.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+
         Section("Overview") {
             if isEditingOverviewConfig {
                 ModelTextField(title: "Answer generation model", text: $draftAnswerModelID)
@@ -329,50 +402,6 @@ struct SessionDetailView: View {
                 }
             }
         }
-
-        if session.questions.isEmpty {
-            Section("Blank Assignment") {
-                Button {
-                    startMasterScan()
-                } label: {
-                    Label("Scan Blank Assignment", systemImage: "doc.viewfinder")
-                }
-                .disabled(!hasAPIKey)
-
-                Text(hasAPIKey ? "Scan the teacher copy or blank exam pages, then review the generated rubric before grading students." : "Add your API key in Settings first.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        } else {
-            Section("Grade Next Student") {
-                Button {
-                    startStudentScan()
-                } label: {
-                    Label("Scan Student Submission", systemImage: "camera.viewfinder")
-                }
-                .disabled(!hasAPIKey || session.isFinished)
-
-                Button {
-                    startBatchStudentScan()
-                } label: {
-                    Label("Batch Scan Submissions", systemImage: "square.stack.3d.down.right")
-                }
-                .disabled(!hasAPIKey || session.isFinished)
-
-                if session.isFinished {
-                    Text("This session is marked as ended. Turn off Session ended to grade more submissions.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("Single scan captures one student at a time, then opens the review screen before saving.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    Text("Batch scan asks for pages per submission, uploads one asynchronous OpenAI batch job, and returns you to the app immediately. New submissions appear in Results as pending until that batch finishes.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
     }
 
     @ViewBuilder
@@ -430,6 +459,26 @@ struct SessionDetailView: View {
 
     @ViewBuilder
     private var resultsSections: some View {
+        Section("Export") {
+            Button {
+                Task {
+                    await exportCSV()
+                }
+            } label: {
+                Label("Export Session CSV", systemImage: "square.and.arrow.up")
+            }
+            .disabled(session.sortedSubmissions.isEmpty)
+
+            Button {
+                Task {
+                    await exportPackage()
+                }
+            } label: {
+                Label("Export Full Session Package", systemImage: "archivebox")
+            }
+            .disabled(session.sortedSubmissions.isEmpty)
+        }
+
         Section("Search") {
             TextField("Search by student name", text: $resultsSearchText)
                 .textInputAutocapitalization(.words)
@@ -473,25 +522,6 @@ struct SessionDetailView: View {
             }
         }
 
-        Section("Export") {
-            Button {
-                Task {
-                    await exportCSV()
-                }
-            } label: {
-                Label("Export Session CSV", systemImage: "square.and.arrow.up")
-            }
-            .disabled(session.sortedSubmissions.isEmpty)
-
-            Button {
-                Task {
-                    await exportPackage()
-                }
-            } label: {
-                Label("Export Full Session Package", systemImage: "archivebox")
-            }
-            .disabled(session.sortedSubmissions.isEmpty)
-        }
     }
 
     private var hasAPIKey: Bool {
@@ -684,17 +714,19 @@ struct SessionDetailView: View {
 
     @MainActor
     private func generateRubric(from images: [UIImage]) async {
-        let pageData = makeJPEGPageData(from: images)
+        busyState = BusyOverlayState(title: "Preparing scan", detail: "Optimizing captured pages")
+        let pageData = await ScanImagePreparation.makeJPEGPageData(from: images)
         guard !pageData.isEmpty else {
+            busyState = nil
             alertItem = AlertItem(message: "The scan did not contain any pages.")
             return
         }
 
         let apiKey = KeychainStore.shared.string(for: AppSecrets.openAIKey) ?? ""
-        busyState = BusyOverlayState(title: "Generating answer key")
         defer { busyState = nil }
 
         do {
+            updateBusyPresentation(title: "Generating answer key", detail: "Uploading optimized scan pages")
             let result = try await OpenAIService.shared.generateAnswerKey(
                 apiKey: apiKey,
                 modelID: session.answerModelID,
@@ -730,8 +762,10 @@ struct SessionDetailView: View {
 
     @MainActor
     private func gradeSubmission(from images: [UIImage]) async {
-        let pageData = makeJPEGPageData(from: images)
+        busyState = BusyOverlayState(title: "Preparing submission", detail: "Optimizing captured pages")
+        let pageData = await ScanImagePreparation.makeJPEGPageData(from: images)
         guard !pageData.isEmpty else {
+            busyState = nil
             alertItem = AlertItem(message: "The scan did not contain any pages.")
             return
         }
@@ -741,7 +775,7 @@ struct SessionDetailView: View {
         defer { busyState = nil }
 
         do {
-            busyState = BusyOverlayState(title: "Grading submission")
+            updateBusyPresentation(title: "Grading submission", detail: "Sending optimized pages for grading")
 
             let processed = try await processor.grade(
                 pageData: pageData,
@@ -778,7 +812,8 @@ struct SessionDetailView: View {
 
     @MainActor
     private func gradeSubmissionBatch(from images: [UIImage], pagesPerSubmission: Int) async {
-        let allPageData = makeJPEGPageData(from: images)
+        busyState = BusyOverlayState(title: "Preparing batch job", detail: "Optimizing captured pages")
+        let allPageData = await ScanImagePreparation.makeJPEGPageData(from: images)
 
         let pageGroups: [[Data]]
         do {
@@ -792,7 +827,6 @@ struct SessionDetailView: View {
         }
 
         let apiKey = KeychainStore.shared.string(for: AppSecrets.openAIKey) ?? ""
-        busyState = BusyOverlayState(title: "Submitting batch job", detail: "Preparing pending submissions")
         defer { busyState = nil }
 
         let placeholders = createPendingBatchSubmissions(for: pageGroups)
@@ -800,11 +834,11 @@ struct SessionDetailView: View {
         do {
             updateBusyPresentation(title: "Submitting batch job", detail: "Uploading requests to OpenAI")
 
-            let batchInputs = placeholders.compactMap { submission -> OpenAIBatchSubmissionInput? in
+            let batchInputs = zip(placeholders, pageGroups).compactMap { submission, pageData -> OpenAIBatchSubmissionInput? in
                 guard let customID = submission.remoteBatchRequestID else { return nil }
                 return OpenAIBatchSubmissionInput(
                     customID: customID,
-                    pageData: submission.scans()
+                    pageData: pageData
                 )
             }
 
@@ -1161,10 +1195,6 @@ struct SessionDetailView: View {
         try? modelContext.save()
     }
 
-    private func makeJPEGPageData(from images: [UIImage]) -> [Data] {
-        images.compactMap { $0.jpegData(compressionQuality: 0.82) }
-    }
-
     @MainActor
     private func updateBusyState(_ mutate: (inout BusyOverlayState) -> Void) {
         var state = busyState ?? BusyOverlayState(title: "Working")
@@ -1247,14 +1277,18 @@ struct SessionDetailView: View {
     }
 
     private var hasPendingBatchSubmissions: Bool {
-        session.sortedSubmissions.contains(where: \.isProcessingPending)
+        session.submissions.contains(where: \.isProcessingPending)
     }
 
     private var filteredSubmissions: [StudentSubmission] {
         let trimmed = resultsSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return session.sortedSubmissions }
-        return session.sortedSubmissions.filter {
-            $0.listDisplayName.localizedCaseInsensitiveContains(trimmed)
+        let filtered = trimmed.isEmpty
+            ? session.submissions
+            : session.submissions.filter {
+                $0.listDisplayName.localizedCaseInsensitiveContains(trimmed)
+            }
+        return filtered.sorted { lhs, rhs in
+            lhs.createdAt > rhs.createdAt
         }
     }
 }

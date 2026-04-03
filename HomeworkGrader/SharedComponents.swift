@@ -54,7 +54,7 @@ struct SubmissionRow: View {
                 StatusChip(label: "Not Full Score", color: .red)
             }
 
-            if submission.isProcessingCompleted && submission.questionGrades().contains(where: \.needsReview) {
+            if submission.isProcessingCompleted && submission.hasQuestionNeedingReview {
                 StatusChip(label: "Review Needed", color: .orange)
             }
         }

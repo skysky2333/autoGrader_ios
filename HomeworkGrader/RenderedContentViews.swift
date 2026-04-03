@@ -1,6 +1,56 @@
 import SwiftUI
 import UIKit
 import WebKit
+import ImageIO
+
+private enum ImagePreviewCache {
+    private static let lock = NSLock()
+    private static var images: [String: UIImage] = [:]
+
+    static func image(for data: Data, maxPixelSize: CGFloat) -> UIImage? {
+        let key = cacheKey(for: data, maxPixelSize: maxPixelSize)
+
+        lock.lock()
+        if let cached = images[key] {
+            lock.unlock()
+            return cached
+        }
+        lock.unlock()
+
+        guard let decoded = downsampledImage(from: data, maxPixelSize: maxPixelSize) else {
+            return nil
+        }
+
+        lock.lock()
+        images[key] = decoded
+        lock.unlock()
+        return decoded
+    }
+
+    private static func cacheKey(for data: Data, maxPixelSize: CGFloat) -> String {
+        "\(data.count)|\((data as NSData).hash)|\(Int(maxPixelSize.rounded()))"
+    }
+
+    private static func downsampledImage(from data: Data, maxPixelSize: CGFloat) -> UIImage? {
+        let options = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, options) else {
+            return nil
+        }
+
+        let thumbnailOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: false,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(Int(maxPixelSize.rounded()), 1),
+        ]
+
+        guard let imageRef = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions as CFDictionary) else {
+            return nil
+        }
+
+        return UIImage(cgImage: imageRef)
+    }
+}
 
 struct ImageStripView: View {
     let pageData: [Data]
@@ -10,33 +60,29 @@ struct ImageStripView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
                 ForEach(Array(pageData.enumerated()), id: \.offset) { index, data in
-                    if let image = UIImage(data: data) {
-                        Button {
-                            selectedImage = ZoomableImageItem(image: image, title: "Page \(index + 1)")
-                        } label: {
-                            VStack(alignment: .leading, spacing: 6) {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 14)
-                                        .fill(Color(.secondarySystemBackground))
+                    Button {
+                        selectedImage = ZoomableImageItem(imageData: data, title: "Page \(index + 1)")
+                    } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(Color(.secondarySystemBackground))
 
-                                    Image(uiImage: image)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .padding(8)
-                                }
-                                .frame(width: 150, height: 200)
-                                .clipShape(RoundedRectangle(cornerRadius: 14))
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 14)
-                                        .strokeBorder(.quaternary, lineWidth: 1)
-                                }
-                                Text("Page \(index + 1)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                DownsampledImageView(data: data, maxPixelSize: 420)
+                                    .padding(8)
                             }
+                            .frame(width: 150, height: 200)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 14)
+                                    .strokeBorder(.quaternary, lineWidth: 1)
+                            }
+                            Text("Page \(index + 1)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
-                        .buttonStyle(.plain)
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.vertical, 4)
@@ -44,6 +90,34 @@ struct ImageStripView: View {
         .fullScreenCover(item: $selectedImage) { item in
             FullScreenImageViewer(item: item)
         }
+    }
+}
+
+private struct DownsampledImageView: View {
+    let data: Data
+    let maxPixelSize: CGFloat
+    @State private var image: UIImage?
+
+    var body: some View {
+        ZStack {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+            } else {
+                ProgressView()
+                    .controlSize(.small)
+            }
+        }
+        .task(id: cacheID) {
+            image = await Task.detached(priority: .utility) {
+                ImagePreviewCache.image(for: data, maxPixelSize: maxPixelSize)
+            }.value
+        }
+    }
+
+    private var cacheID: String {
+        "\(data.count)|\((data as NSData).hash)|\(Int(maxPixelSize.rounded()))"
     }
 }
 
@@ -404,7 +478,7 @@ struct MathRenderedTextView: UIViewRepresentable {
 
 private struct ZoomableImageItem: Identifiable {
     let id = UUID()
-    let image: UIImage
+    let imageData: Data
     let title: String
 }
 
@@ -416,7 +490,7 @@ private struct FullScreenImageViewer: View {
         ZStack(alignment: .topTrailing) {
             Color.black.ignoresSafeArea()
 
-            ZoomableImageScrollView(image: item.image)
+            ZoomableImageScrollView(imageData: item.imageData)
                 .ignoresSafeArea()
 
             Button {
@@ -439,10 +513,10 @@ private struct FullScreenImageViewer: View {
 }
 
 private struct ZoomableImageScrollView: UIViewRepresentable {
-    let image: UIImage
+    let imageData: Data
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(image: image)
+        Coordinator()
     }
 
     func makeUIView(context: Context) -> UIScrollView {
@@ -456,7 +530,6 @@ private struct ZoomableImageScrollView: UIViewRepresentable {
         scrollView.backgroundColor = .black
 
         let imageView = context.coordinator.imageView
-        imageView.image = image
         imageView.contentMode = .scaleAspectFit
         imageView.frame = scrollView.bounds
         imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -466,20 +539,28 @@ private struct ZoomableImageScrollView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIScrollView, context: Context) {
-        context.coordinator.imageView.image = image
+        if context.coordinator.lastDataHash != imageDataHash {
+            context.coordinator.lastDataHash = imageDataHash
+            context.coordinator.imageView.image = ImagePreviewCache.image(for: imageData, maxPixelSize: 3_000)
+            uiView.zoomScale = 1
+        }
         context.coordinator.imageView.frame = uiView.bounds
     }
 
     final class Coordinator: NSObject, UIScrollViewDelegate {
         let imageView = UIImageView()
+        var lastDataHash: Int?
 
-        init(image: UIImage) {
+        override init() {
             super.init()
-            imageView.image = image
         }
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? {
             imageView
         }
+    }
+
+    private var imageDataHash: Int {
+        (imageData as NSData).hash
     }
 }

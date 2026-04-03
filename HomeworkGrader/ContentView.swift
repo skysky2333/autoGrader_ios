@@ -127,18 +127,18 @@ private struct NewSessionSheet: View {
     @State private var answerModel = ModelCatalog.defaultAnswerModel
     @State private var gradingModel = ModelCatalog.defaultGradingModel
     @State private var validationEnabled = true
-    @State private var validationModel = "gpt-5.4-mini"
+    @State private var validationModel = ModelCatalog.defaultValidationModel
     @State private var integerPointsOnly = true
     @State private var relaxedGradingMode = false
     @State private var answerReasoningEffort: String? = "high"
-    @State private var gradingReasoningEffort: String? = "medium"
-    @State private var validationReasoningEffort: String? = "low"
+    @State private var gradingReasoningEffort: String? = "high"
+    @State private var validationReasoningEffort: String? = "high"
     @State private var answerVerbosity: String? = nil
     @State private var gradingVerbosity: String? = nil
     @State private var validationVerbosity: String? = nil
-    @State private var answerServiceTier: String? = nil
-    @State private var gradingServiceTier: String? = nil
-    @State private var validationServiceTier: String? = nil
+    @State private var answerServiceTier: String? = "flex"
+    @State private var gradingServiceTier: String? = "flex"
+    @State private var validationServiceTier: String? = "flex"
 
     var body: some View {
         NavigationStack {

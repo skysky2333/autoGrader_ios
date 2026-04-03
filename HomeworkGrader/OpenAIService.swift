@@ -121,6 +121,7 @@ final class OpenAIService: @unchecked Sendable {
     private let batchesEndpoint = URL(string: "https://api.openai.com/v1/batches")!
     private let filesEndpoint = URL(string: "https://api.openai.com/v1/files")!
     private let organizationCostsEndpoint = URL(string: "https://api.openai.com/v1/organization/costs")!
+    private let visionImageDetail = "high"
 
     init(session: URLSession = .shared) {
         self.session = session
@@ -678,7 +679,7 @@ final class OpenAIService: @unchecked Sendable {
             userContent.append([
                 "type": "input_image",
                 "image_url": makeDataURL(for: image),
-                "detail": "high",
+                "detail": visionImageDetail,
             ])
         }
 

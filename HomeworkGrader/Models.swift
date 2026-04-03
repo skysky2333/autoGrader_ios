@@ -1,6 +1,74 @@
 import Foundation
 import SwiftData
 
+private enum ArchiveDecodeCache {
+    private static let lock = NSLock()
+    private static var pageEntries: [String: [Data]] = [:]
+    private static var gradeEntries: [String: [QuestionGradeRecord]] = [:]
+
+    static func pages(ownerID: UUID, archive: Data?) -> [Data] {
+        let key = cacheKey(ownerID: ownerID, archive: archive)
+        return cachedValue(for: key, store: &pageEntries) {
+            guard let archive else { return [] }
+            return (try? JSONDecoder().decode([Data].self, from: archive)) ?? []
+        }
+    }
+
+    static func grades(ownerID: UUID, archive: Data?) -> [QuestionGradeRecord] {
+        let key = cacheKey(ownerID: ownerID, archive: archive)
+        return cachedValue(for: key, store: &gradeEntries) {
+            guard let archive else { return [] }
+            return (try? JSONDecoder().decode([QuestionGradeRecord].self, from: archive)) ?? []
+        }
+    }
+
+    static func storePages(_ pages: [Data], ownerID: UUID, archive: Data?) {
+        let key = cacheKey(ownerID: ownerID, archive: archive)
+        lock.lock()
+        defer { lock.unlock() }
+        removeEntriesLocked(for: ownerID, from: &pageEntries)
+        pageEntries[key] = pages
+    }
+
+    static func storeGrades(_ grades: [QuestionGradeRecord], ownerID: UUID, archive: Data?) {
+        let key = cacheKey(ownerID: ownerID, archive: archive)
+        lock.lock()
+        defer { lock.unlock() }
+        removeEntriesLocked(for: ownerID, from: &gradeEntries)
+        gradeEntries[key] = grades
+    }
+
+    private static func cachedValue<Value>(
+        for key: String,
+        store: inout [String: Value],
+        decode: () -> Value
+    ) -> Value {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if let existing = store[key] {
+            return existing
+        }
+
+        let decoded = decode()
+        store[key] = decoded
+        return decoded
+    }
+
+    private static func removeEntriesLocked<Value>(for ownerID: UUID, from store: inout [String: Value]) {
+        let prefix = ownerID.uuidString + "|"
+        store.keys
+            .filter { $0.hasPrefix(prefix) }
+            .forEach { store.removeValue(forKey: $0) }
+    }
+
+    private static func cacheKey(ownerID: UUID, archive: Data?) -> String {
+        let archiveHash = archive.map { ($0 as NSData).hash } ?? 0
+        let archiveCount = archive?.count ?? 0
+        return "\(ownerID.uuidString)|\(archiveCount)|\(archiveHash)"
+    }
+}
+
 enum ModelCatalog {
     static let suggestions = [
         "gpt-5.4",
@@ -12,7 +80,8 @@ enum ModelCatalog {
     ]
 
     static let defaultAnswerModel = "gpt-5.4"
-    static let defaultGradingModel = "gpt-5.4"
+    static let defaultGradingModel = "gpt-5.4-mini"
+    static let defaultValidationModel = "gpt-5.4-mini"
 }
 
 struct APIRequestTuningOption: Identifiable, Hashable, Sendable {
@@ -337,12 +406,12 @@ extension GradingSession {
     }
 
     func masterScans() -> [Data] {
-        guard let masterScanArchive else { return [] }
-        return (try? JSONDecoder().decode([Data].self, from: masterScanArchive)) ?? []
+        ArchiveDecodeCache.pages(ownerID: id, archive: masterScanArchive)
     }
 
     func setMasterScans(_ pages: [Data]) {
         masterScanArchive = try? JSONEncoder().encode(pages)
+        ArchiveDecodeCache.storePages(pages, ownerID: id, archive: masterScanArchive)
     }
 }
 
@@ -372,22 +441,26 @@ extension StudentSubmission {
         nameNeedsReview ?? false
     }
 
+    var hasQuestionNeedingReview: Bool {
+        questionGrades().contains(where: \.needsReview)
+    }
+
     func scans() -> [Data] {
-        guard let scanArchive else { return [] }
-        return (try? JSONDecoder().decode([Data].self, from: scanArchive)) ?? []
+        ArchiveDecodeCache.pages(ownerID: id, archive: scanArchive)
     }
 
     func setScans(_ pages: [Data]) {
         scanArchive = try? JSONEncoder().encode(pages)
+        ArchiveDecodeCache.storePages(pages, ownerID: id, archive: scanArchive)
     }
 
     func questionGrades() -> [QuestionGradeRecord] {
-        guard let gradeArchive else { return [] }
-        return (try? JSONDecoder().decode([QuestionGradeRecord].self, from: gradeArchive)) ?? []
+        ArchiveDecodeCache.grades(ownerID: id, archive: gradeArchive)
     }
 
     func setQuestionGrades(_ grades: [QuestionGradeRecord]) {
         gradeArchive = try? JSONEncoder().encode(grades)
+        ArchiveDecodeCache.storeGrades(grades, ownerID: id, archive: gradeArchive)
         totalScore = grades.reduce(0) { $0 + $1.awardedPoints }
         maxScore = grades.reduce(0) { $0 + $1.maxPoints }
     }
