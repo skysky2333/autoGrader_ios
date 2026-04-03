@@ -1,6 +1,96 @@
 import SwiftUI
 import UIKit
 
+enum FeedbackToastTone: Equatable {
+    case success
+    case info
+    case error
+
+    var systemImage: String {
+        switch self {
+        case .success:
+            return "checkmark.circle.fill"
+        case .info:
+            return "info.circle.fill"
+        case .error:
+            return "exclamationmark.triangle.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .success:
+            return .green
+        case .info:
+            return .blue
+        case .error:
+            return .red
+        }
+    }
+
+    var hapticType: UINotificationFeedbackGenerator.FeedbackType {
+        switch self {
+        case .success:
+            return .success
+        case .info:
+            return .warning
+        case .error:
+            return .error
+        }
+    }
+}
+
+struct FeedbackToastState: Identifiable, Equatable {
+    let id = UUID()
+    let message: String
+    let tone: FeedbackToastTone
+}
+
+@MainActor
+final class FeedbackCenter: ObservableObject {
+    @Published private(set) var toast: FeedbackToastState?
+    @Published private var presenterStack: [UUID] = []
+    private var dismissTask: Task<Void, Never>?
+
+    func show(
+        _ message: String,
+        tone: FeedbackToastTone = .success,
+        durationNanoseconds: UInt64 = 2_000_000_000
+    ) {
+        dismissTask?.cancel()
+
+        let nextToast = FeedbackToastState(message: message, tone: tone)
+        UINotificationFeedbackGenerator().notificationOccurred(tone.hapticType)
+
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+            toast = nextToast
+        }
+
+        dismissTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: durationNanoseconds)
+            guard !Task.isCancelled else { return }
+            guard self?.toast?.id == nextToast.id else { return }
+
+            withAnimation(.easeOut(duration: 0.2)) {
+                self?.toast = nil
+            }
+        }
+    }
+
+    func registerPresenter(_ id: UUID) {
+        presenterStack.removeAll { $0 == id }
+        presenterStack.append(id)
+    }
+
+    func unregisterPresenter(_ id: UUID) {
+        presenterStack.removeAll { $0 == id }
+    }
+
+    func isActivePresenter(_ id: UUID) -> Bool {
+        presenterStack.last == id
+    }
+}
+
 struct SubmissionRow: View {
     let submission: StudentSubmission
 
@@ -357,6 +447,90 @@ struct BusyOverlay: View {
     }
 }
 
+private struct FeedbackToastView: View {
+    let toast: FeedbackToastState
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: toast.tone.systemImage)
+                .foregroundStyle(toast.tone.color)
+            Text(toast.message)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay {
+            Capsule()
+                .strokeBorder(toast.tone.color.opacity(0.18), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.12), radius: 12, y: 6)
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .allowsHitTesting(false)
+    }
+}
+
+private struct FeedbackToastModifier: ViewModifier {
+    @EnvironmentObject private var feedbackCenter: FeedbackCenter
+    @State private var presenterID = UUID()
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .top) {
+            if
+                let toast = feedbackCenter.toast,
+                feedbackCenter.isActivePresenter(presenterID)
+            {
+                FeedbackToastView(toast: toast)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .onAppear {
+            feedbackCenter.registerPresenter(presenterID)
+        }
+        .onDisappear {
+            feedbackCenter.unregisterPresenter(presenterID)
+        }
+    }
+}
+
+private struct ActivityOverlayView: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+            Text(text)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial, in: Capsule())
+        .shadow(color: .black.opacity(0.10), radius: 10, y: 6)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 20)
+        .allowsHitTesting(false)
+    }
+}
+
+private struct ActivityOverlayModifier: ViewModifier {
+    let isPresented: Bool
+    let text: String
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .bottom) {
+            if isPresented {
+                ActivityOverlayView(text: text)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+    }
+}
+
 struct AlertItem: Identifiable {
     let id = UUID()
     let message: String
@@ -389,5 +563,13 @@ private struct KeyboardDismissToolbarModifier: ViewModifier {
 extension View {
     func keyboardDismissToolbar() -> some View {
         modifier(KeyboardDismissToolbarModifier())
+    }
+
+    func feedbackToast() -> some View {
+        modifier(FeedbackToastModifier())
+    }
+
+    func activityOverlay(isPresented: Bool, text: String) -> some View {
+        modifier(ActivityOverlayModifier(isPresented: isPresented, text: text))
     }
 }

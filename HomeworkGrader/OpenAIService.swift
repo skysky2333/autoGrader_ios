@@ -72,7 +72,7 @@ struct OrganizationCostSummary: Equatable, Sendable {
 
 struct OpenAIBatchSubmissionInput: Sendable {
     let customID: String
-    let pageData: [Data]
+    let pageFileURLs: [URL]
 }
 
 struct OpenAIBatchCreationResult: Sendable {
@@ -374,17 +374,18 @@ final class OpenAIService: @unchecked Sendable {
             validatorFeedback: nil
         )
 
-        let jsonlData = try makeSubmissionBatchJSONL(
+        let jsonlFileURL = try makeSubmissionBatchJSONLFile(
             submissions: submissions,
             modelID: modelID,
             definition: definition,
             reasoningEffort: reasoningEffort,
             verbosity: verbosity
         )
+        defer { try? FileManager.default.removeItem(at: jsonlFileURL) }
 
         let fileID = try await uploadBatchInputFile(
             apiKey: trimmedKey,
-            data: jsonlData,
+            fileURL: jsonlFileURL,
             filename: "homework-grader-\(UUID().uuidString).jsonl"
         )
 
@@ -834,21 +835,30 @@ final class OpenAIService: @unchecked Sendable {
         }
     }
 
-    private func makeSubmissionBatchJSONL(
+    private func makeSubmissionBatchJSONLFile(
         submissions: [OpenAIBatchSubmissionInput],
         modelID: String,
         definition: StructuredResponseDefinition,
         reasoningEffort: String?,
         verbosity: String?
-    ) throws -> Data {
-        let lines = try submissions.map { submission -> String in
+    ) throws -> URL {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeworkGraderBatch-\(UUID().uuidString).jsonl")
+        FileManager.default.createFile(atPath: fileURL.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: fileURL)
+        defer { try? handle.close() }
+
+        for submission in submissions {
+            let images = try submission.pageFileURLs.map {
+                try Data(contentsOf: $0, options: .mappedIfSafe)
+            }
             let body = makeStructuredRequestBody(
                 modelID: modelID,
                 schemaName: definition.schemaName,
                 schema: definition.schema,
                 systemPrompt: definition.systemPrompt,
                 userText: definition.userText,
-                images: submission.pageData,
+                images: images,
                 reasoningEffort: reasoningEffort,
                 verbosity: verbosity,
                 serviceTier: nil,
@@ -863,15 +873,16 @@ final class OpenAIService: @unchecked Sendable {
             ]
 
             let data = try JSONSerialization.data(withJSONObject: lineObject, options: [])
-            return String(decoding: data, as: UTF8.self)
+            try handle.write(contentsOf: data)
+            try handle.write(contentsOf: Data("\n".utf8))
         }
 
-        return Data(lines.joined(separator: "\n").utf8)
+        return fileURL
     }
 
     private func uploadBatchInputFile(
         apiKey: String,
-        data: Data,
+        fileURL: URL,
         filename: String
     ) async throws -> String {
         let boundary = "Boundary-\(UUID().uuidString)"
@@ -880,46 +891,57 @@ final class OpenAIService: @unchecked Sendable {
         request.timeoutInterval = 180
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.httpBody = makeMultipartFormData(
+        let multipartFileURL = try makeMultipartFormFile(
             boundary: boundary,
             fileFieldName: "file",
             filename: filename,
             mimeType: "application/jsonl",
-            fileData: data,
+            fileURL: fileURL,
             extraFields: [
                 "purpose": "batch",
             ]
         )
+        defer { try? FileManager.default.removeItem(at: multipartFileURL) }
 
-        let (responseData, response) = try await session.data(for: request)
+        let (responseData, response) = try await session.upload(for: request, fromFile: multipartFileURL)
         let payload = try decodeHTTPPayload(data: responseData, response: response)
         let file = try JSONDecoder().decode(OpenAIFileObject.self, from: payload)
         return file.id
     }
 
-    private func makeMultipartFormData(
+    private func makeMultipartFormFile(
         boundary: String,
         fileFieldName: String,
         filename: String,
         mimeType: String,
-        fileData: Data,
+        fileURL: URL,
         extraFields: [String: String]
-    ) -> Data {
-        var body = Data()
+    ) throws -> URL {
+        let multipartURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeworkGraderUpload-\(UUID().uuidString).tmp")
+        FileManager.default.createFile(atPath: multipartURL.path, contents: nil)
+        let outputHandle = try FileHandle(forWritingTo: multipartURL)
+        defer { try? outputHandle.close() }
 
         for (key, value) in extraFields {
-            body.append("--\(boundary)\r\n")
-            body.append("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n")
-            body.append("\(value)\r\n")
+            try outputHandle.write(contentsOf: Data("--\(boundary)\r\n".utf8))
+            try outputHandle.write(contentsOf: Data("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n".utf8))
+            try outputHandle.write(contentsOf: Data("\(value)\r\n".utf8))
         }
 
-        body.append("--\(boundary)\r\n")
-        body.append("Content-Disposition: form-data; name=\"\(fileFieldName)\"; filename=\"\(filename)\"\r\n")
-        body.append("Content-Type: \(mimeType)\r\n\r\n")
-        body.append(fileData)
-        body.append("\r\n")
-        body.append("--\(boundary)--\r\n")
-        return body
+        try outputHandle.write(contentsOf: Data("--\(boundary)\r\n".utf8))
+        try outputHandle.write(contentsOf: Data("Content-Disposition: form-data; name=\"\(fileFieldName)\"; filename=\"\(filename)\"\r\n".utf8))
+        try outputHandle.write(contentsOf: Data("Content-Type: \(mimeType)\r\n\r\n".utf8))
+
+        let inputHandle = try FileHandle(forReadingFrom: fileURL)
+        defer { try? inputHandle.close() }
+
+        while let chunk = try inputHandle.read(upToCount: 512 * 1024), !chunk.isEmpty {
+            try outputHandle.write(contentsOf: chunk)
+        }
+
+        try outputHandle.write(contentsOf: Data("\r\n--\(boundary)--\r\n".utf8))
+        return multipartURL
     }
 
     private func fetchJSONLLines(apiKey: String, fileID: String) async throws -> [[String: Any]] {

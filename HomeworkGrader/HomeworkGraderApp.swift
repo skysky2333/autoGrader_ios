@@ -3,6 +3,8 @@ import SwiftData
 
 @main
 struct HomeworkGraderApp: App {
+    @StateObject private var feedbackCenter = FeedbackCenter()
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             GradingSession.self,
@@ -22,6 +24,7 @@ struct HomeworkGraderApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(feedbackCenter)
         }
         .modelContainer(sharedModelContainer)
     }

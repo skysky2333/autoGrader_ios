@@ -2,33 +2,96 @@ import SwiftUI
 import SwiftData
 import UIKit
 import VisionKit
+import ImageIO
+import UniformTypeIdentifiers
 
 private enum ScanImagePreparation {
-    static func makeJPEGPageData(from images: [UIImage]) async -> [Data] {
-        await Task.detached(priority: .userInitiated) {
-            images.compactMap { image in
+    static let optimizedMaxPixelSize: CGFloat = 2200
+    static let optimizedJPEGQuality: CGFloat = 0.82
+
+    static func makeJPEGPageData(
+        from fileURLs: [URL],
+        progress: (@Sendable (Int, Int) async -> Void)? = nil
+    ) async -> [Data] {
+        let optimizedFiles = await makeOptimizedJPEGFiles(from: fileURLs, progress: progress)
+        defer { ScanCaptureStorage.removeFiles(at: optimizedFiles) }
+
+        return await Task.detached(priority: .userInitiated) {
+            optimizedFiles.compactMap { fileURL in
                 autoreleasepool {
-                    originalResolutionJPEGData(from: image)
+                    try? Data(contentsOf: fileURL, options: .mappedIfSafe)
                 }
             }
         }.value
     }
 
-    private static func originalResolutionJPEGData(from image: UIImage) -> Data? {
-        let normalized = normalizedImage(from: image)
-        return normalized.jpegData(compressionQuality: 1.0)
+    static func makeOptimizedJPEGFiles(
+        from fileURLs: [URL],
+        progress: (@Sendable (Int, Int) async -> Void)? = nil
+    ) async -> [URL] {
+        await Task.detached(priority: .userInitiated) {
+            guard let outputDirectory = try? ScanCaptureStorage.makeCaptureDirectory() else { return [] }
+
+            var optimizedURLs: [URL] = []
+            optimizedURLs.reserveCapacity(fileURLs.count)
+
+            for (index, fileURL) in fileURLs.enumerated() {
+                if let optimizedData = autoreleasepool(invoking: {
+                    optimizedJPEGData(from: fileURL)
+                }) {
+                    let optimizedURL = outputDirectory.appendingPathComponent(String(format: "optimized-%04d.jpg", index + 1))
+                    do {
+                        try optimizedData.write(to: optimizedURL, options: .atomic)
+                        optimizedURLs.append(optimizedURL)
+                    } catch {
+                        break
+                    }
+                }
+
+                if let progress {
+                    await progress(index + 1, fileURLs.count)
+                }
+            }
+
+            return optimizedURLs
+        }.value
     }
 
-    private static func normalizedImage(from image: UIImage) -> UIImage {
-        guard image.imageOrientation != .up else { return image }
-
-        let format = UIGraphicsImageRendererFormat.default()
-        format.scale = image.scale
-        format.opaque = true
-
-        return UIGraphicsImageRenderer(size: image.size, format: format).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: image.size))
+    private static func optimizedJPEGData(from fileURL: URL) -> Data? {
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let imageSource = CGImageSourceCreateWithURL(fileURL as CFURL, sourceOptions) else {
+            return nil
         }
+
+        let thumbnailOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: false,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(Int(optimizedMaxPixelSize.rounded()), 1),
+        ]
+
+        guard let imageRef = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, thumbnailOptions as CFDictionary) else {
+            return nil
+        }
+
+        let outputData = NSMutableData()
+        guard
+            let destination = CGImageDestinationCreateWithData(
+                outputData,
+                UTType.jpeg.identifier as CFString,
+                1,
+                nil
+            )
+        else {
+            return nil
+        }
+
+        let destinationOptions: [CFString: Any] = [
+            kCGImageDestinationLossyCompressionQuality: optimizedJPEGQuality,
+        ]
+        CGImageDestinationAddImage(destination, imageRef, destinationOptions as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return outputData as Data
     }
 }
 
@@ -59,6 +122,7 @@ private struct ActiveCaptureFlow: Identifiable, Equatable {
 struct SessionDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var feedbackCenter: FeedbackCenter
     @Bindable var session: GradingSession
 
     @State private var showingScanSourcePicker = false
@@ -95,6 +159,7 @@ struct SessionDetailView: View {
     @State private var draftAnswerServiceTier: String? = nil
     @State private var draftGradingServiceTier: String? = nil
     @State private var draftValidationServiceTier: String? = nil
+    @State private var isSavingOverviewConfig = false
     @State private var isRefreshingPendingBatches = false
     @State private var lastPendingBatchRefreshAt: Date?
 
@@ -161,8 +226,8 @@ struct SessionDetailView: View {
             switch flow.source {
             case .documentScanner:
                 DocumentScannerView(
-                    onComplete: { images in
-                        handleCaptureCompletion(images, for: flow)
+                    onComplete: { fileURLs in
+                        handleCaptureCompletion(fileURLs, for: flow)
                     },
                     onCancel: {
                         handleCaptureCancellation(for: flow)
@@ -174,8 +239,8 @@ struct SessionDetailView: View {
                 .ignoresSafeArea()
             case .camera:
                 CameraCaptureView(
-                    onComplete: { images in
-                        handleCaptureCompletion(images, for: flow)
+                    onComplete: { fileURLs in
+                        handleCaptureCompletion(fileURLs, for: flow)
                     },
                     onCancel: {
                         handleCaptureCancellation(for: flow)
@@ -255,6 +320,8 @@ struct SessionDetailView: View {
             }
         }
         .keyboardDismissToolbar()
+        .feedbackToast()
+        .activityOverlay(isPresented: isSavingOverviewConfig, text: "Saving config...")
     }
 
     private var tabPickerSection: some View {
@@ -391,10 +458,16 @@ struct SessionDetailView: View {
 
                     Spacer()
 
-                    Button("Save Config") {
-                        saveOverviewConfigEdits()
+                    Button {
+                        beginSaveOverviewConfig()
+                    } label: {
+                        if isSavingOverviewConfig {
+                            ProgressView()
+                        } else {
+                            Text("Save Config")
+                        }
                     }
-                    .disabled(!canSaveOverviewConfig)
+                    .disabled(!canSaveOverviewConfig || isSavingOverviewConfig)
                 }
             } else {
                 Button("Edit Config") {
@@ -499,6 +572,20 @@ struct SessionDetailView: View {
                 Text("Batch submissions show up here immediately as pending. Pull results later without blocking the rest of the app.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+
+                if isRefreshingPendingBatches {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Checking OpenAI for batch updates...")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                } else if let lastPendingBatchRefreshAt {
+                    Text("Last checked \(lastPendingBatchRefreshAt.formatted(date: .omitted, time: .shortened)).")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             if filteredSubmissions.isEmpty {
@@ -585,6 +672,18 @@ struct SessionDetailView: View {
 
         try? modelContext.save()
         isEditingOverviewConfig = false
+        feedbackCenter.show("Session config saved.")
+    }
+
+    private func beginSaveOverviewConfig() {
+        guard !isSavingOverviewConfig else { return }
+        isSavingOverviewConfig = true
+
+        Task { @MainActor in
+            await Task.yield()
+            saveOverviewConfigEdits()
+            isSavingOverviewConfig = false
+        }
     }
 
     private func startMasterScan() {
@@ -670,7 +769,7 @@ struct SessionDetailView: View {
         activeCaptureFlow = ActiveCaptureFlow(kind: kind, source: source)
     }
 
-    private func handleCaptureCompletion(_ images: [UIImage], for flow: ActiveCaptureFlow) {
+    private func handleCaptureCompletion(_ fileURLs: [URL], for flow: ActiveCaptureFlow) {
         activeCaptureFlow = nil
 
         switch flow.kind {
@@ -678,13 +777,13 @@ struct SessionDetailView: View {
             pendingScanIntent = nil
             pendingScanSource = nil
             Task {
-                await generateRubric(from: images)
+                await generateRubric(from: fileURLs)
             }
         case .student:
             pendingScanIntent = nil
             pendingScanSource = nil
             Task {
-                await gradeSubmission(from: images)
+                await gradeSubmission(from: fileURLs)
             }
         case .batch:
             let pagesPerSubmission = pendingBatchPagesPerSubmission ?? session.maxPagesPerSubmission ?? 0
@@ -692,7 +791,7 @@ struct SessionDetailView: View {
             pendingScanIntent = nil
             pendingScanSource = nil
             Task {
-                await gradeSubmissionBatch(from: images, pagesPerSubmission: pagesPerSubmission)
+                await gradeSubmissionBatch(from: fileURLs, pagesPerSubmission: pagesPerSubmission)
             }
         }
     }
@@ -713,9 +812,19 @@ struct SessionDetailView: View {
     }
 
     @MainActor
-    private func generateRubric(from images: [UIImage]) async {
+    private func generateRubric(from fileURLs: [URL]) async {
+        defer { ScanCaptureStorage.removeFiles(at: fileURLs) }
         busyState = BusyOverlayState(title: "Preparing scan", detail: "Optimizing captured pages")
-        let pageData = await ScanImagePreparation.makeJPEGPageData(from: images)
+        let pageData = await ScanImagePreparation.makeJPEGPageData(from: fileURLs) { completed, total in
+            await MainActor.run {
+                updateBusyPresentation(
+                    title: "Preparing scan",
+                    detail: "Optimizing captured pages",
+                    progressLabel: "Optimized \(completed) of \(total)",
+                    progressValue: total == 0 ? nil : Double(completed) / Double(total)
+                )
+            }
+        }
         guard !pageData.isEmpty else {
             busyState = nil
             alertItem = AlertItem(message: "The scan did not contain any pages.")
@@ -761,9 +870,19 @@ struct SessionDetailView: View {
     }
 
     @MainActor
-    private func gradeSubmission(from images: [UIImage]) async {
+    private func gradeSubmission(from fileURLs: [URL]) async {
+        defer { ScanCaptureStorage.removeFiles(at: fileURLs) }
         busyState = BusyOverlayState(title: "Preparing submission", detail: "Optimizing captured pages")
-        let pageData = await ScanImagePreparation.makeJPEGPageData(from: images)
+        let pageData = await ScanImagePreparation.makeJPEGPageData(from: fileURLs) { completed, total in
+            await MainActor.run {
+                updateBusyPresentation(
+                    title: "Preparing submission",
+                    detail: "Optimizing captured pages",
+                    progressLabel: "Optimized \(completed) of \(total)",
+                    progressValue: total == 0 ? nil : Double(completed) / Double(total)
+                )
+            }
+        }
         guard !pageData.isEmpty else {
             busyState = nil
             alertItem = AlertItem(message: "The scan did not contain any pages.")
@@ -811,14 +930,25 @@ struct SessionDetailView: View {
     }
 
     @MainActor
-    private func gradeSubmissionBatch(from images: [UIImage], pagesPerSubmission: Int) async {
+    private func gradeSubmissionBatch(from fileURLs: [URL], pagesPerSubmission: Int) async {
+        defer { ScanCaptureStorage.removeFiles(at: fileURLs) }
         busyState = BusyOverlayState(title: "Preparing batch job", detail: "Optimizing captured pages")
-        let allPageData = await ScanImagePreparation.makeJPEGPageData(from: images)
+        let optimizedPageFileURLs = await ScanImagePreparation.makeOptimizedJPEGFiles(from: fileURLs) { completed, total in
+            await MainActor.run {
+                updateBusyPresentation(
+                    title: "Preparing batch job",
+                    detail: "Optimizing captured pages",
+                    progressLabel: "Optimized \(completed) of \(total)",
+                    progressValue: total == 0 ? nil : Double(completed) / Double(total)
+                )
+            }
+        }
+        defer { ScanCaptureStorage.removeFiles(at: optimizedPageFileURLs) }
 
-        let pageGroups: [[Data]]
+        let pageGroups: [[URL]]
         do {
             pageGroups = try SubmissionBatchOrganizer.split(
-                pages: allPageData,
+                pages: optimizedPageFileURLs,
                 pagesPerSubmission: pagesPerSubmission
             )
         } catch {
@@ -838,7 +968,7 @@ struct SessionDetailView: View {
                 guard let customID = submission.remoteBatchRequestID else { return nil }
                 return OpenAIBatchSubmissionInput(
                     customID: customID,
-                    pageData: pageData
+                    pageFileURLs: pageData
                 )
             }
 
@@ -903,11 +1033,13 @@ struct SessionDetailView: View {
 
         session.rubricApprovedAt = .now
         try? modelContext.save()
+        feedbackCenter.show("Rubric saved.")
     }
 
     private func saveSubmission(_ approvedDraft: SubmissionDraft, persistChanges: Bool = true) {
+        let trimmedName = approvedDraft.studentName.trimmingCharacters(in: .whitespacesAndNewlines)
         let submission = StudentSubmission(
-            studentName: approvedDraft.studentName.trimmingCharacters(in: .whitespacesAndNewlines),
+            studentName: trimmedName,
             nameNeedsReview: approvedDraft.nameNeedsReview,
             overallNotes: approvedDraft.overallNotes.trimmingCharacters(in: .whitespacesAndNewlines),
             teacherReviewed: true,
@@ -922,6 +1054,7 @@ struct SessionDetailView: View {
         session.submissions.append(submission)
         if persistChanges {
             try? modelContext.save()
+            feedbackCenter.show(trimmedName.isEmpty ? "Submission saved." : "Saved \(trimmedName).")
         }
     }
 
@@ -932,8 +1065,8 @@ struct SessionDetailView: View {
         try? modelContext.save()
     }
 
-    private func createPendingBatchSubmissions(for pageGroups: [[Data]]) -> [StudentSubmission] {
-        let placeholders = pageGroups.enumerated().map { index, pageData in
+    private func createPendingBatchSubmissions(for pageGroups: [[URL]]) -> [StudentSubmission] {
+        let placeholders = pageGroups.enumerated().map { index, pageFileURLs in
             let submission = StudentSubmission(
                 studentName: "Pending Submission \(index + 1)",
                 nameNeedsReview: false,
@@ -946,6 +1079,7 @@ struct SessionDetailView: View {
                 remoteBatchRequestID: "submission-\(UUID().uuidString)",
                 session: session
             )
+            let pageData = pageFileURLs.compactMap { try? Data(contentsOf: $0, options: .mappedIfSafe) }
             submission.setScans(pageData)
             modelContext.insert(submission)
             session.submissions.append(submission)
@@ -987,6 +1121,7 @@ struct SessionDetailView: View {
 
         guard !batchIDs.isEmpty else { return }
 
+        let summaryBeforeRefresh = batchRefreshSummary
         isRefreshingPendingBatches = true
         lastPendingBatchRefreshAt = .now
         defer { isRefreshingPendingBatches = false }
@@ -1007,6 +1142,10 @@ struct SessionDetailView: View {
         }
 
         try? modelContext.save()
+
+        if force {
+            feedbackCenter.show(batchRefreshFeedbackMessage(before: summaryBeforeRefresh, after: batchRefreshSummary), tone: .info)
+        }
     }
 
     @MainActor
@@ -1214,9 +1353,19 @@ struct SessionDetailView: View {
     }
 
     @MainActor
-    private func updateBusyPresentation(title: String, detail: String? = nil) {
+    private func updateBusyPresentation(
+        title: String,
+        detail: String? = nil,
+        progressLabel: String? = nil,
+        progressValue: Double? = nil
+    ) {
         updateBusyState { state in
-            state.setPresentation(title: title, detail: detail)
+            state.setPresentation(
+                title: title,
+                detail: detail,
+                progressLabel: progressLabel,
+                progressValue: progressValue
+            )
         }
     }
 
@@ -1273,6 +1422,7 @@ struct SessionDetailView: View {
     private func deleteSession() {
         modelContext.delete(session)
         try? modelContext.save()
+        feedbackCenter.show("Session deleted.", tone: .info)
         dismiss()
     }
 
@@ -1291,4 +1441,40 @@ struct SessionDetailView: View {
             lhs.createdAt > rhs.createdAt
         }
     }
+
+    private var batchRefreshSummary: BatchRefreshSummary {
+        BatchRefreshSummary(
+            pending: session.submissions.filter { $0.isProcessingPending }.count,
+            completed: session.submissions.filter { $0.isProcessingCompleted }.count,
+            failed: session.submissions.filter { $0.isProcessingFailed }.count
+        )
+    }
+
+    private func batchRefreshFeedbackMessage(
+        before: BatchRefreshSummary,
+        after: BatchRefreshSummary
+    ) -> String {
+        let completedDelta = max(after.completed - before.completed, 0)
+        let failedDelta = max(after.failed - before.failed, 0)
+
+        if completedDelta == 0 && failedDelta == 0 {
+            return "Checked pending jobs. No new updates yet."
+        }
+
+        var parts: [String] = []
+        if completedDelta > 0 {
+            parts.append("\(completedDelta) completed")
+        }
+        if failedDelta > 0 {
+            parts.append("\(failedDelta) failed")
+        }
+        parts.append("\(after.pending) still pending")
+        return "Batch refresh finished: \(parts.joined(separator: ", "))."
+    }
+}
+
+private struct BatchRefreshSummary {
+    let pending: Int
+    let completed: Int
+    let failed: Int
 }

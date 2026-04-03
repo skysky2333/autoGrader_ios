@@ -71,6 +71,7 @@ struct ContentView: View {
         .sheet(isPresented: $showingSettings) {
             SettingsView()
         }
+        .feedbackToast()
     }
 
     private var hasAPIKey: Bool {
@@ -122,6 +123,7 @@ private struct SessionRow: View {
 private struct NewSessionSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var feedbackCenter: FeedbackCenter
 
     @State private var title = ""
     @State private var answerModel = ModelCatalog.defaultAnswerModel
@@ -206,6 +208,7 @@ private struct NewSessionSheet: View {
             }
             .keyboardDismissToolbar()
         }
+        .feedbackToast()
     }
 
     private var canCreate: Bool {
@@ -237,12 +240,14 @@ private struct NewSessionSheet: View {
         )
         modelContext.insert(session)
         try? modelContext.save()
+        feedbackCenter.show("Session created.")
         dismiss()
     }
 }
 
 private struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var feedbackCenter: FeedbackCenter
     @Query(sort: \GradingSession.createdAt, order: .reverse) private var sessions: [GradingSession]
     @State private var apiKey = KeychainStore.shared.string(for: AppSecrets.openAIKey) ?? ""
     @State private var statusMessage = ""
@@ -342,6 +347,7 @@ private struct SettingsView: View {
             }
             .keyboardDismissToolbar()
         }
+        .feedbackToast()
     }
 
     private var trimmedAPIKey: String {
@@ -359,6 +365,7 @@ private struct SettingsView: View {
     private func saveKey() async {
         KeychainStore.shared.setString(trimmedAPIKey, for: AppSecrets.openAIKey)
         statusMessage = trimmedAPIKey.isEmpty ? "API key cleared." : "API key saved."
+        feedbackCenter.show(statusMessage)
         costState = .idle
         if !trimmedAPIKey.isEmpty {
             await refreshOrganizationCost()
@@ -373,8 +380,10 @@ private struct SettingsView: View {
         do {
             try await OpenAIService.shared.validateAPIKey(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
             statusMessage = "API key works."
+            feedbackCenter.show(statusMessage)
         } catch {
             statusMessage = error.localizedDescription
+            feedbackCenter.show(statusMessage, tone: .error)
         }
     }
 

@@ -338,7 +338,7 @@ enum SubmissionBatchOrganizerError: LocalizedError, Equatable {
 }
 
 enum SubmissionBatchOrganizer {
-    static func split(pages: [Data], pagesPerSubmission: Int) throws -> [[Data]] {
+    static func split<Page>(pages: [Page], pagesPerSubmission: Int) throws -> [[Page]] {
         guard pagesPerSubmission > 0 else {
             throw SubmissionBatchOrganizerError.invalidPagesPerSubmission
         }

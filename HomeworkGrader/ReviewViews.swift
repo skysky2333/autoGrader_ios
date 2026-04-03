@@ -3,9 +3,11 @@ import SwiftData
 
 struct AnswerKeyReviewView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var feedbackCenter: FeedbackCenter
     @State private var questionDrafts: [RubricQuestionDraft]
     @State private var defaultPointsText = "1"
     @State private var overallGradingRules: String
+    @State private var isSaving = false
     let pageData: [Data]
     let integerPointsOnly: Bool
     let onApprove: (String, [RubricQuestionDraft]) -> Void
@@ -92,14 +94,22 @@ struct AnswerKeyReviewView: View {
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Approve") {
-                        onApprove(overallGradingRules, questionDrafts)
+                    Button {
+                        beginApprove()
+                    } label: {
+                        if isSaving {
+                            ProgressView()
+                        } else {
+                            Text("Approve")
+                        }
                     }
-                    .disabled(!canApprove)
+                    .disabled(!canApprove || isSaving)
                 }
             }
             .keyboardDismissToolbar()
         }
+        .feedbackToast()
+        .activityOverlay(isPresented: isSaving, text: "Saving rubric...")
     }
 
     private var canApprove: Bool {
@@ -121,6 +131,18 @@ struct AnswerKeyReviewView: View {
             var copy = draft
             copy.maxPointsText = display
             return copy
+        }
+        feedbackCenter.show("Applied \(display) points to \(questionDrafts.count) questions.")
+    }
+
+    private func beginApprove() {
+        guard !isSaving else { return }
+        isSaving = true
+
+        Task { @MainActor in
+            await Task.yield()
+            onApprove(overallGradingRules, questionDrafts)
+            isSaving = false
         }
     }
 }
@@ -263,6 +285,7 @@ struct SubmissionDraftFormSections: View {
 struct SubmissionReviewView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft: SubmissionDraft
+    @State private var isSaving = false
     let integerPointsOnly: Bool
     let onSave: (SubmissionDraft) -> Void
     let onSaveAndScanNext: (SubmissionDraft) -> Void
@@ -294,21 +317,35 @@ struct SubmissionReviewView: View {
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        onSave(normalizedDraft)
+                    Button {
+                        beginSave(scanNext: false)
+                    } label: {
+                        if isSaving {
+                            ProgressView()
+                        } else {
+                            Text("Save")
+                        }
                     }
-                    .disabled(!canSave)
+                    .disabled(!canSave || isSaving)
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save & Scan Next") {
-                        onSaveAndScanNext(normalizedDraft)
+                    Button {
+                        beginSave(scanNext: true)
+                    } label: {
+                        if isSaving {
+                            ProgressView()
+                        } else {
+                            Text("Save & Scan Next")
+                        }
                     }
-                    .disabled(!canSave)
+                    .disabled(!canSave || isSaving)
                 }
             }
             .keyboardDismissToolbar()
         }
+        .feedbackToast()
+        .activityOverlay(isPresented: isSaving, text: "Saving submission...")
     }
 
     private var canSave: Bool {
@@ -317,6 +354,21 @@ struct SubmissionReviewView: View {
 
     private var normalizedDraft: SubmissionDraft {
         draft.normalized(integerPointsOnly: integerPointsOnly)
+    }
+
+    private func beginSave(scanNext: Bool) {
+        guard !isSaving else { return }
+        isSaving = true
+
+        Task { @MainActor in
+            await Task.yield()
+            if scanNext {
+                onSaveAndScanNext(normalizedDraft)
+            } else {
+                onSave(normalizedDraft)
+            }
+            isSaving = false
+        }
     }
 }
 
@@ -396,6 +448,7 @@ struct BatchSubmissionReviewView: View {
                 }
             }
         }
+        .feedbackToast()
     }
 
     private var canSaveAll: Bool {
@@ -421,15 +474,18 @@ struct BatchSubmissionDraftEditorView: View {
         .navigationTitle(draft.studentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Submission" : draft.studentName)
         .navigationBarTitleDisplayMode(.inline)
         .keyboardDismissToolbar()
+        .feedbackToast()
     }
 }
 
 struct SavedSubmissionDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var feedbackCenter: FeedbackCenter
     let submission: StudentSubmission
     let integerPointsOnly: Bool
     @State private var draft: SubmissionDraft
+    @State private var isSaving = false
 
     init(submission: StudentSubmission) {
         self.submission = submission
@@ -512,14 +568,22 @@ struct SavedSubmissionDetailView: View {
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        saveChanges()
+                    Button {
+                        beginSave()
+                    } label: {
+                        if isSaving {
+                            ProgressView()
+                        } else {
+                            Text("Save")
+                        }
                     }
-                    .disabled(draft.studentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(draft.studentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
                 }
             }
             .keyboardDismissToolbar()
         }
+        .feedbackToast()
+        .activityOverlay(isPresented: isSaving, text: "Saving submission...")
     }
 
     private func saveChanges() {
@@ -532,91 +596,215 @@ struct SavedSubmissionDetailView: View {
         submission.processingDetail = nil
         submission.setQuestionGrades(normalized.grades)
         try? modelContext.save()
+        feedbackCenter.show("Submission saved.")
         dismiss()
+    }
+
+    private func beginSave() {
+        guard !isSaving else { return }
+        isSaving = true
+
+        Task { @MainActor in
+            await Task.yield()
+            saveChanges()
+            isSaving = false
+        }
     }
 }
 
 struct RubricQuestionDetailView: View {
     @Environment(\.modelContext) private var modelContext
-    @Bindable var question: QuestionRubric
+    @EnvironmentObject private var feedbackCenter: FeedbackCenter
+    let question: QuestionRubric
+    @State private var displayLabel: String
+    @State private var questionID: String
+    @State private var promptText: String
+    @State private var idealAnswer: String
+    @State private var gradingCriteria: String
     @State private var maxPointsText: String
+    @State private var isSaving = false
 
     init(question: QuestionRubric) {
         self.question = question
+        _displayLabel = State(initialValue: question.displayLabel)
+        _questionID = State(initialValue: question.questionID)
+        _promptText = State(initialValue: question.promptText)
+        _idealAnswer = State(initialValue: question.idealAnswer)
+        _gradingCriteria = State(initialValue: question.gradingCriteria)
         _maxPointsText = State(initialValue: ScoreFormatting.scoreString(question.maxPoints))
     }
 
     var body: some View {
         Form {
             Section("Question") {
-                TextField("Display label", text: $question.displayLabel)
+                TextField("Display label", text: $displayLabel)
                     .textInputAutocapitalization(.words)
-                TextField("Question ID", text: $question.questionID)
+                TextField("Question ID", text: $questionID)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 TextField("Max points", text: $maxPointsText)
                     .keyboardType((question.session?.integerPointsOnlyEnabled ?? false) ? .numberPad : .decimalPad)
-                    .onChange(of: maxPointsText) { _, newValue in
-                        if let parsed = PointPolicy.parse(newValue, integerOnly: question.session?.integerPointsOnlyEnabled ?? false) {
-                            question.maxPoints = parsed
-                            try? modelContext.save()
-                        }
-                    }
             }
 
             Section("Prompt") {
-                TextEditor(text: $question.promptText)
+                TextEditor(text: $promptText)
                     .frame(minHeight: 140)
-                RenderedPreviewButton(title: "Prompt Preview", text: question.promptText)
+                RenderedPreviewButton(title: "Prompt Preview", text: promptText)
             }
 
             Section("Ideal Answer") {
-                TextEditor(text: $question.idealAnswer)
+                TextEditor(text: $idealAnswer)
                     .frame(minHeight: 160)
-                RenderedPreviewButton(title: "Ideal Answer Preview", text: question.idealAnswer)
+                RenderedPreviewButton(title: "Ideal Answer Preview", text: idealAnswer)
             }
 
             Section("Grading Criteria") {
-                TextEditor(text: $question.gradingCriteria)
+                TextEditor(text: $gradingCriteria)
                     .frame(minHeight: 160)
-                RenderedPreviewButton(title: "Grading Criteria Preview", text: question.gradingCriteria)
+                RenderedPreviewButton(title: "Grading Criteria Preview", text: gradingCriteria)
             }
         }
-        .navigationTitle(question.displayLabel)
+        .navigationTitle(displayLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Question" : displayLabel)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button {
+                    beginSave()
+                } label: {
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Text("Save")
+                    }
+                }
+                .disabled(!canSave || !hasUnsavedChanges || isSaving)
+            }
+        }
         .onDisappear {
-            try? modelContext.save()
+            if hasUnsavedChanges {
+                persistChanges(showFeedback: false)
+            }
         }
         .keyboardDismissToolbar()
+        .feedbackToast()
+        .activityOverlay(isPresented: isSaving, text: "Saving question...")
+    }
+
+    private var canSave: Bool {
+        !displayLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !questionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        PointPolicy.parse(maxPointsText, integerOnly: question.session?.integerPointsOnlyEnabled ?? false) != nil
+    }
+
+    private var hasUnsavedChanges: Bool {
+        displayLabel != question.displayLabel ||
+        questionID != question.questionID ||
+        promptText != question.promptText ||
+        idealAnswer != question.idealAnswer ||
+        gradingCriteria != question.gradingCriteria ||
+        maxPointsText != ScoreFormatting.scoreString(question.maxPoints)
+    }
+
+    private func persistChanges(showFeedback: Bool) {
+        guard canSave else { return }
+
+        question.displayLabel = displayLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        question.questionID = questionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        question.promptText = promptText.trimmingCharacters(in: .whitespacesAndNewlines)
+        question.idealAnswer = idealAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
+        question.gradingCriteria = gradingCriteria.trimmingCharacters(in: .whitespacesAndNewlines)
+        question.maxPoints = PointPolicy.parse(
+            maxPointsText,
+            integerOnly: question.session?.integerPointsOnlyEnabled ?? false
+        ) ?? question.maxPoints
+        try? modelContext.save()
+
+        if showFeedback {
+            feedbackCenter.show("Question saved.")
+        }
+    }
+
+    private func beginSave() {
+        guard !isSaving else { return }
+        isSaving = true
+
+        Task { @MainActor in
+            await Task.yield()
+            persistChanges(showFeedback: true)
+            isSaving = false
+        }
     }
 }
 
 struct OverallRulesEditorView: View {
     @Environment(\.modelContext) private var modelContext
-    @Bindable var session: GradingSession
+    @EnvironmentObject private var feedbackCenter: FeedbackCenter
+    let session: GradingSession
+    @State private var rulesText: String
+    @State private var isSaving = false
+
+    init(session: GradingSession) {
+        self.session = session
+        _rulesText = State(initialValue: session.overallGradingRules ?? "")
+    }
 
     var body: some View {
         Form {
             Section("Overall Grading Rules") {
-                TextEditor(
-                    text: Binding(
-                        get: { session.overallGradingRules ?? "" },
-                        set: { newValue in
-                            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                            session.overallGradingRules = trimmed.isEmpty ? nil : newValue
-                        }
-                    )
-                )
+                TextEditor(text: $rulesText)
                 .frame(minHeight: 180)
 
-                RenderedPreviewButton(title: "Overall Rules Preview", text: session.overallGradingRules ?? "")
+                RenderedPreviewButton(title: "Overall Rules Preview", text: rulesText)
             }
         }
         .navigationTitle("Overall Rules")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button {
+                    beginSave()
+                } label: {
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Text("Save")
+                    }
+                }
+                .disabled(!hasUnsavedChanges || isSaving)
+            }
+        }
         .onDisappear {
-            try? modelContext.save()
+            if hasUnsavedChanges {
+                persistChanges(showFeedback: false)
+            }
         }
         .keyboardDismissToolbar()
+        .feedbackToast()
+        .activityOverlay(isPresented: isSaving, text: "Saving rules...")
+    }
+
+    private var hasUnsavedChanges: Bool {
+        rulesText != (session.overallGradingRules ?? "")
+    }
+
+    private func persistChanges(showFeedback: Bool) {
+        let trimmed = rulesText.trimmingCharacters(in: .whitespacesAndNewlines)
+        session.overallGradingRules = trimmed.isEmpty ? nil : rulesText
+        try? modelContext.save()
+
+        if showFeedback {
+            feedbackCenter.show("Overall rules saved.")
+        }
+    }
+
+    private func beginSave() {
+        guard !isSaving else { return }
+        isSaving = true
+
+        Task { @MainActor in
+            await Task.yield()
+            persistChanges(showFeedback: true)
+            isSaving = false
+        }
     }
 }

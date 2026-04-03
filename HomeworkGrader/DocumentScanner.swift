@@ -3,6 +3,70 @@ import UIKit
 import VisionKit
 import AVFoundation
 
+enum ScanCaptureStorage {
+    static func makeCaptureDirectory() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeworkGraderCapture-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    static func writeJPEGImage(_ image: UIImage, index: Int, directory: URL) throws -> URL {
+        let normalized = normalizedImage(from: image)
+        guard let data = normalized.jpegData(compressionQuality: 0.92) else {
+            throw ScanCaptureStorageError.unableToPersistCapture
+        }
+
+        let fileURL = directory.appendingPathComponent(String(format: "page-%04d.jpg", index + 1))
+        try data.write(to: fileURL, options: .atomic)
+        return fileURL
+    }
+
+    static func writeImageData(_ data: Data, index: Int, directory: URL) throws -> URL {
+        let fileURL = directory.appendingPathComponent(String(format: "page-%04d.jpg", index + 1))
+        try data.write(to: fileURL, options: .atomic)
+        return fileURL
+    }
+
+    static func removeFiles(at fileURLs: [URL]) {
+        let directories = Set(fileURLs.map { $0.deletingLastPathComponent() })
+        for fileURL in fileURLs {
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+        for directory in directories {
+            try? FileManager.default.removeItem(at: directory)
+        }
+    }
+
+    static func removeDirectory(_ directory: URL?) {
+        guard let directory else { return }
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    private static func normalizedImage(from image: UIImage) -> UIImage {
+        guard image.imageOrientation != .up else { return image }
+
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = image.scale
+        format.opaque = true
+
+        return UIGraphicsImageRenderer(size: image.size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: image.size))
+        }
+    }
+}
+
+enum ScanCaptureStorageError: LocalizedError {
+    case unableToPersistCapture
+
+    var errorDescription: String? {
+        switch self {
+        case .unableToPersistCapture:
+            return "The captured page could not be saved for processing."
+        }
+    }
+}
+
 enum ScanCaptureSource: String, Identifiable {
     case documentScanner = "Document Scanner"
     case camera = "Camera"
@@ -22,7 +86,7 @@ enum ScanCaptureSource: String, Identifiable {
 }
 
 struct DocumentScannerView: UIViewControllerRepresentable {
-    let onComplete: ([UIImage]) -> Void
+    let onComplete: ([URL]) -> Void
     let onCancel: () -> Void
     let onError: (Error) -> Void
 
@@ -54,8 +118,26 @@ struct DocumentScannerView: UIViewControllerRepresentable {
         }
 
         func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFinishWith scan: VNDocumentCameraScan) {
-            let images = (0..<scan.pageCount).map { scan.imageOfPage(at: $0) }
-            parent.onComplete(images)
+            var directory: URL?
+            do {
+                let captureDirectory = try ScanCaptureStorage.makeCaptureDirectory()
+                directory = captureDirectory
+                var fileURLs: [URL] = []
+                fileURLs.reserveCapacity(scan.pageCount)
+
+                for index in 0..<scan.pageCount {
+                    let fileURL = try autoreleasepool {
+                        let image = scan.imageOfPage(at: index)
+                        return try ScanCaptureStorage.writeJPEGImage(image, index: index, directory: captureDirectory)
+                    }
+                    fileURLs.append(fileURL)
+                }
+
+                parent.onComplete(fileURLs)
+            } catch {
+                ScanCaptureStorage.removeDirectory(directory)
+                parent.onError(error)
+            }
         }
     }
 }
@@ -71,7 +153,7 @@ struct ShareSheet: UIViewControllerRepresentable {
 }
 
 struct CameraCaptureView: UIViewControllerRepresentable {
-    let onComplete: ([UIImage]) -> Void
+    let onComplete: ([URL]) -> Void
     let onCancel: () -> Void
     let onError: (Error) -> Void
 
@@ -102,8 +184,8 @@ struct CameraCaptureView: UIViewControllerRepresentable {
             parent.onError(error)
         }
 
-        func cameraCaptureViewController(_ controller: CameraCaptureViewController, didFinishWith images: [UIImage]) {
-            parent.onComplete(images)
+        func cameraCaptureViewController(_ controller: CameraCaptureViewController, didFinishWith fileURLs: [URL]) {
+            parent.onComplete(fileURLs)
         }
     }
 }
@@ -111,7 +193,7 @@ struct CameraCaptureView: UIViewControllerRepresentable {
 protocol CameraCaptureViewControllerDelegate: AnyObject {
     func cameraCaptureViewControllerDidCancel(_ controller: CameraCaptureViewController)
     func cameraCaptureViewController(_ controller: CameraCaptureViewController, didFailWithError error: Error)
-    func cameraCaptureViewController(_ controller: CameraCaptureViewController, didFinishWith images: [UIImage])
+    func cameraCaptureViewController(_ controller: CameraCaptureViewController, didFinishWith fileURLs: [URL])
 }
 
 final class CameraCaptureViewController: UIViewController {
@@ -138,14 +220,16 @@ final class CameraCaptureViewController: UIViewController {
     private let doneButton = UIButton(type: .system)
     private let cancelButton = UIButton(type: .system)
     private let flashView = UIView()
-    private var capturedImages: [UIImage] = [] {
+    private var captureDirectoryURL: URL?
+    private var capturedPageURLs: [URL] = [] {
         didSet {
             updateCountLabel()
             updatePreview()
-            doneButton.isEnabled = !capturedImages.isEmpty
-            doneButton.alpha = capturedImages.isEmpty ? 0.5 : 1.0
+            doneButton.isEnabled = !capturedPageURLs.isEmpty
+            doneButton.alpha = capturedPageURLs.isEmpty ? 0.5 : 1.0
         }
     }
+    private var lastPreviewImage: UIImage?
     private var isConfigured = false
     private var isCaptureInProgress = false {
         didSet {
@@ -424,15 +508,15 @@ final class CameraCaptureViewController: UIViewController {
     }
 
     private func updateCountLabel() {
-        countLabel.text = capturedImages.isEmpty
+        countLabel.text = capturedPageURLs.isEmpty
             ? "No pages yet"
-            : "\(capturedImages.count) page\(capturedImages.count == 1 ? "" : "s") captured"
+            : "\(capturedPageURLs.count) page\(capturedPageURLs.count == 1 ? "" : "s") captured"
     }
 
     private func updatePreview() {
-        previewImageView.image = capturedImages.last
-        previewTitleLabel.text = capturedImages.isEmpty ? "No pages" : "Last page"
-        deleteLastButton.isEnabled = !capturedImages.isEmpty && !isCaptureInProgress
+        previewImageView.image = lastPreviewImage
+        previewTitleLabel.text = capturedPageURLs.isEmpty ? "No pages" : "Last page"
+        deleteLastButton.isEnabled = !capturedPageURLs.isEmpty && !isCaptureInProgress
         deleteLastButton.alpha = deleteLastButton.isEnabled ? 1.0 : 0.5
     }
 
@@ -448,9 +532,9 @@ final class CameraCaptureViewController: UIViewController {
             captureActivityIndicator.stopAnimating()
         }
 
-        doneButton.isEnabled = !capturedImages.isEmpty && !isCaptureInProgress
+        doneButton.isEnabled = !capturedPageURLs.isEmpty && !isCaptureInProgress
         doneButton.alpha = doneButton.isEnabled ? 1.0 : 0.5
-        deleteLastButton.isEnabled = !capturedImages.isEmpty && !isCaptureInProgress
+        deleteLastButton.isEnabled = !capturedPageURLs.isEmpty && !isCaptureInProgress
         deleteLastButton.alpha = deleteLastButton.isEnabled ? 1.0 : 0.5
     }
 
@@ -500,20 +584,26 @@ final class CameraCaptureViewController: UIViewController {
 
     @objc
     private func finishCapture() {
-        delegate?.cameraCaptureViewController(self, didFinishWith: capturedImages)
+        delegate?.cameraCaptureViewController(self, didFinishWith: capturedPageURLs)
     }
 
     @objc
     private func cancelCapture() {
+        ScanCaptureStorage.removeDirectory(captureDirectoryURL)
+        captureDirectoryURL = nil
+        capturedPageURLs = []
+        lastPreviewImage = nil
         delegate?.cameraCaptureViewControllerDidCancel(self)
     }
 
     @objc
     private func deleteLastPhoto() {
-        guard !capturedImages.isEmpty, !isCaptureInProgress else { return }
-        capturedImages.removeLast()
+        guard !capturedPageURLs.isEmpty, !isCaptureInProgress else { return }
+        let removedURL = capturedPageURLs.removeLast()
+        try? FileManager.default.removeItem(at: removedURL)
+        lastPreviewImage = capturedPageURLs.last.flatMap { UIImage(contentsOfFile: $0.path) }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        showFeedback(capturedImages.isEmpty ? "Removed last page" : "Last page deleted")
+        showFeedback(capturedPageURLs.isEmpty ? "Removed last page" : "Last page deleted")
     }
 }
 
@@ -526,18 +616,38 @@ extension CameraCaptureViewController: AVCapturePhotoCaptureDelegate {
         }
 
         guard
-            let data = photo.fileDataRepresentation(),
-            let image = UIImage(data: data)
+            let data = photo.fileDataRepresentation()
         else {
             isCaptureInProgress = false
             delegate?.cameraCaptureViewController(self, didFailWithError: CameraCaptureError.unableToDecodePhoto)
             return
         }
 
-        capturedImages.append(image)
+        do {
+            if captureDirectoryURL == nil {
+                captureDirectoryURL = try ScanCaptureStorage.makeCaptureDirectory()
+            }
+
+            guard let captureDirectoryURL else {
+                throw ScanCaptureStorageError.unableToPersistCapture
+            }
+
+            let fileURL = try ScanCaptureStorage.writeImageData(
+                data,
+                index: capturedPageURLs.count,
+                directory: captureDirectoryURL
+            )
+            capturedPageURLs.append(fileURL)
+            lastPreviewImage = UIImage(data: data)
+        } catch {
+            isCaptureInProgress = false
+            delegate?.cameraCaptureViewController(self, didFailWithError: error)
+            return
+        }
+
         isCaptureInProgress = false
         UINotificationFeedbackGenerator().notificationOccurred(.success)
-        showFeedback("Captured page \(capturedImages.count)")
+        showFeedback("Captured page \(capturedPageURLs.count)")
     }
 }
 
