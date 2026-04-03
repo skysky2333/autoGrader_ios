@@ -204,7 +204,7 @@ final class OpenAIService: @unchecked Sendable {
         If parts of a page are unclear, still provide your best structured extraction and mention uncertainty inside grading_criteria.
         In prompt_text, ideal_answer, and grading_criteria:
         - keep normal prose as plain text
-        - wrap every mathematical expression in $$...$$ or $...$
+        - wrap every mathematical expression in $...$ or $$...$$
         - use only valid standard LaTeX inside those delimiters
         - never use single-dollar math delimiters
         - if you are unsure how to write an expression in LaTeX, use plain text instead of broken LaTeX
@@ -315,7 +315,7 @@ final class OpenAIService: @unchecked Sendable {
         Keep validator_summary concise and actionable so it can be used to regrade the submission if needed.
         In validator_summary and issues:
         - keep normal prose as plain text
-        - wrap every mathematical expression in $$...$$ or $...$
+        - wrap every mathematical expression in $...$ or $$...$$
         - use only valid standard LaTeX inside those delimiters
         - never use single-dollar math delimiters
         - if you are unsure how to write an expression in LaTeX, use plain text instead of broken LaTeX
@@ -629,7 +629,7 @@ final class OpenAIService: @unchecked Sendable {
         \(relaxedGradingMode ? "Relaxed grading mode is ON. If the student's final answer for a question is correct, award full credit for that question even if the intermediate work is minimal, omitted, or imperfect. Do not require many intermediate steps for full credit when the final answer is correct, unless the rubric explicitly requires process-based scoring." : "")
         In feedback and overall_notes:
         - keep normal prose as plain text
-        - wrap every mathematical expression in $$...$$ or $...$
+        - wrap every mathematical expression in $...$ or $$...$$
         - use only valid standard LaTeX inside those delimiters
         - never use single-dollar math delimiters
         - do not output malformed LaTeX

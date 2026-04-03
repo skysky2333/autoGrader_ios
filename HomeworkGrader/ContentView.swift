@@ -108,7 +108,7 @@ private struct SessionRow: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            Text("\(session.sortedQuestions.count) questions • \(session.sortedSubmissions.count) submissions")
+            Text("\(session.questions.count) questions • \(session.submissions.count) submissions")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 

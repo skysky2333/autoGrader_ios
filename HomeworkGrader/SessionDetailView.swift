@@ -407,8 +407,8 @@ struct SessionDetailView: View {
                 LabeledContent("Validation model", value: session.validationModelLabel)
             }
             LabeledContent("Point mode", value: session.pointModeLabel)
-            LabeledContent("Questions", value: "\(session.sortedQuestions.count)")
-            LabeledContent("Saved submissions", value: "\(session.sortedSubmissions.count)")
+            LabeledContent("Questions", value: "\(session.questions.count)")
+            LabeledContent("Saved submissions", value: "\(session.submissions.count)")
             LabeledContent("Total points", value: ScoreFormatting.scoreString(session.totalPossiblePoints))
             LabeledContent("API cost", value: session.sessionCostLabel)
             LabeledContent("Batch pages / submission", value: session.maxPagesLabel)
@@ -540,7 +540,7 @@ struct SessionDetailView: View {
             } label: {
                 Label("Export Session CSV", systemImage: "square.and.arrow.up")
             }
-            .disabled(session.sortedSubmissions.isEmpty)
+            .disabled(session.submissions.isEmpty)
 
             Button {
                 Task {
@@ -549,7 +549,7 @@ struct SessionDetailView: View {
             } label: {
                 Label("Export Full Session Package", systemImage: "archivebox")
             }
-            .disabled(session.sortedSubmissions.isEmpty)
+            .disabled(session.submissions.isEmpty)
         }
 
         Section("Search") {
@@ -920,7 +920,10 @@ struct SessionDetailView: View {
             )
 
             for usage in processed.usageSummaries {
-                recordUsage(usage, apiKey: apiKey)
+                recordUsage(usage, apiKey: apiKey, persistChanges: false)
+            }
+            if !processed.usageSummaries.isEmpty {
+                try? modelContext.save()
             }
 
             submissionDraft = processed.draft
@@ -1079,8 +1082,7 @@ struct SessionDetailView: View {
                 remoteBatchRequestID: "submission-\(UUID().uuidString)",
                 session: session
             )
-            let pageData = pageFileURLs.compactMap { try? Data(contentsOf: $0, options: .mappedIfSafe) }
-            submission.setScans(pageData)
+            submission.setScans(from: pageFileURLs)
             modelContext.insert(submission)
             session.submissions.append(submission)
             return submission
@@ -1115,7 +1117,7 @@ struct SessionDetailView: View {
         }
 
         let apiKey = KeychainStore.shared.string(for: AppSecrets.openAIKey) ?? ""
-        let batchIDs = Array(Set(session.sortedSubmissions.compactMap { submission in
+        let batchIDs = Array(Set(session.submissions.compactMap { submission in
             submission.isProcessingPending ? submission.remoteBatchID : nil
         }))
 
@@ -1195,7 +1197,7 @@ struct SessionDetailView: View {
 
         let resultsByID = Dictionary(uniqueKeysWithValues: results.map { ($0.customID, $0) })
         let errorsByID = Dictionary(uniqueKeysWithValues: errors.map { ($0.customID, $0.message) })
-        let pendingSubmissions = session.sortedSubmissions.filter {
+        let pendingSubmissions = session.submissions.filter {
             $0.isProcessingPending && $0.remoteBatchID == snapshot.batchID
         }
 
@@ -1241,17 +1243,17 @@ struct SessionDetailView: View {
         submission.processingStateRaw = StudentSubmissionProcessingState.completed.rawValue
         submission.processingDetail = nil
         submission.setQuestionGrades(draft.grades)
-        recordUsage(result.usage, apiKey: apiKey)
+        recordUsage(result.usage, apiKey: apiKey, persistChanges: false)
     }
 
     private func markBatchSubmissions(batchID: String, detail: String) {
-        for submission in session.sortedSubmissions where submission.isProcessingPending && submission.remoteBatchID == batchID {
+        for submission in session.submissions where submission.isProcessingPending && submission.remoteBatchID == batchID {
             submission.processingDetail = detail
         }
     }
 
     private func markBatchSubmissionsAsFailed(batchID: String, message: String) {
-        for submission in session.sortedSubmissions where submission.isProcessingPending && submission.remoteBatchID == batchID {
+        for submission in session.submissions where submission.isProcessingPending && submission.remoteBatchID == batchID {
             markSubmissionFailed(submission, message: message)
         }
     }
@@ -1324,14 +1326,16 @@ struct SessionDetailView: View {
         }
     }
 
-    private func recordUsage(_ usage: OpenAIUsageSummary?, apiKey: String) {
+    private func recordUsage(_ usage: OpenAIUsageSummary?, apiKey: String, persistChanges: Bool = true) {
         guard let usage else { return }
 
         session.estimatedCostUSD = (session.estimatedCostUSD ?? 0) + usage.estimatedCostUSD
         if session.apiKeyFingerprint == nil {
             session.apiKeyFingerprint = APIKeyIdentity.fingerprint(for: apiKey)
         }
-        try? modelContext.save()
+        if persistChanges {
+            try? modelContext.save()
+        }
     }
 
     @MainActor

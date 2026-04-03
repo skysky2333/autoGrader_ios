@@ -40,8 +40,12 @@ enum SessionExporter {
 
         let masterDir = rootURL.appendingPathComponent("master_scans", isDirectory: true)
         try FileManager.default.createDirectory(at: masterDir, withIntermediateDirectories: true)
-        for (index, data) in session.masterScans().enumerated() {
-            try data.write(to: masterDir.appendingPathComponent("page-\(index + 1).jpg"))
+        if let masterScanFileURLs = session.masterScanFileURLs() {
+            try copyPages(from: masterScanFileURLs, to: masterDir)
+        } else {
+            for (index, data) in session.masterScans().enumerated() {
+                try data.write(to: masterDir.appendingPathComponent("page-\(index + 1).jpg"))
+            }
         }
 
         let submissionsDir = rootURL.appendingPathComponent("submissions", isDirectory: true)
@@ -69,8 +73,12 @@ enum SessionExporter {
 
             let scansDir = childDir.appendingPathComponent("scans", isDirectory: true)
             try FileManager.default.createDirectory(at: scansDir, withIntermediateDirectories: true)
-            for (index, data) in submission.scans().enumerated() {
-                try data.write(to: scansDir.appendingPathComponent("page-\(index + 1).jpg"))
+            if let scanFileURLs = submission.scanFileURLs() {
+                try copyPages(from: scanFileURLs, to: scansDir)
+            } else {
+                for (index, data) in submission.scans().enumerated() {
+                    try data.write(to: scansDir.appendingPathComponent("page-\(index + 1).jpg"))
+                }
             }
         }
 
@@ -84,6 +92,19 @@ enum SessionExporter {
             .replacingOccurrences(of: " ", with: "-")
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
         return cleaned.isEmpty ? "session" : cleaned
+    }
+
+    private static func copyPages(from sourceFileURLs: [URL], to directoryURL: URL) throws {
+        for (index, sourceFileURL) in sourceFileURLs.enumerated() {
+            let pathExtension = sourceFileURL.pathExtension.isEmpty ? "jpg" : sourceFileURL.pathExtension
+            let destinationURL = directoryURL.appendingPathComponent(
+                String(format: "page-%d.%@", index + 1, pathExtension)
+            )
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                try FileManager.default.removeItem(at: destinationURL)
+            }
+            try FileManager.default.copyItem(at: sourceFileURL, to: destinationURL)
+        }
     }
 }
 
@@ -104,9 +125,12 @@ private enum SimpleZipWriter {
             }
             .sorted { $0.path < $1.path }
 
-        var archive = Data()
         var centralDirectory = Data()
         var entryCount: UInt16 = 0
+        var currentOffset: UInt32 = 0
+        FileManager.default.createFile(atPath: zipURL.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: zipURL)
+        defer { try? handle.close() }
 
         for fileURL in fileURLs {
             let relativePath = directoryURL.lastPathComponent + "/" + fileURL.path.replacingOccurrences(of: directoryURL.path + "/", with: "")
@@ -115,57 +139,63 @@ private enum SimpleZipWriter {
             let crc = CRC32.checksum(fileData)
             let modDate = try fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate ?? .now
             let dos = DOSDateTime(date: modDate)
-            let localHeaderOffset = UInt32(archive.count)
+            let localHeaderOffset = currentOffset
 
-            archive.appendLE(localFileHeaderSignature)
-            archive.appendLE(UInt16(20))
-            archive.appendLE(UInt16(0))
-            archive.appendLE(UInt16(0))
-            archive.appendLE(dos.time)
-            archive.appendLE(dos.date)
-            archive.appendLE(crc)
-            archive.appendLE(UInt32(fileData.count))
-            archive.appendLE(UInt32(fileData.count))
-            archive.appendLE(UInt16(fileNameData.count))
-            archive.appendLE(UInt16(0))
-            archive.append(fileNameData)
-            archive.append(fileData)
+            var localHeader = Data()
+            localHeader.appendLE(localFileHeaderSignature)
+            localHeader.appendLE(UInt16(20))
+            localHeader.appendLE(UInt16(0))
+            localHeader.appendLE(UInt16(0))
+            localHeader.appendLE(dos.time)
+            localHeader.appendLE(dos.date)
+            localHeader.appendLE(crc)
+            localHeader.appendLE(UInt32(fileData.count))
+            localHeader.appendLE(UInt32(fileData.count))
+            localHeader.appendLE(UInt16(fileNameData.count))
+            localHeader.appendLE(UInt16(0))
+            localHeader.append(fileNameData)
+            try handle.write(contentsOf: localHeader)
+            try handle.write(contentsOf: fileData)
 
-            centralDirectory.appendLE(centralDirectoryHeaderSignature)
-            centralDirectory.appendLE(UInt16(20))
-            centralDirectory.appendLE(UInt16(20))
-            centralDirectory.appendLE(UInt16(0))
-            centralDirectory.appendLE(UInt16(0))
-            centralDirectory.appendLE(dos.time)
-            centralDirectory.appendLE(dos.date)
-            centralDirectory.appendLE(crc)
-            centralDirectory.appendLE(UInt32(fileData.count))
-            centralDirectory.appendLE(UInt32(fileData.count))
-            centralDirectory.appendLE(UInt16(fileNameData.count))
-            centralDirectory.appendLE(UInt16(0))
-            centralDirectory.appendLE(UInt16(0))
-            centralDirectory.appendLE(UInt16(0))
-            centralDirectory.appendLE(UInt16(0))
-            centralDirectory.appendLE(UInt32(0))
-            centralDirectory.appendLE(localHeaderOffset)
-            centralDirectory.append(fileNameData)
+            currentOffset += UInt32(localHeader.count + fileData.count)
+
+            var centralEntry = Data()
+            centralEntry.appendLE(centralDirectoryHeaderSignature)
+            centralEntry.appendLE(UInt16(20))
+            centralEntry.appendLE(UInt16(20))
+            centralEntry.appendLE(UInt16(0))
+            centralEntry.appendLE(UInt16(0))
+            centralEntry.appendLE(dos.time)
+            centralEntry.appendLE(dos.date)
+            centralEntry.appendLE(crc)
+            centralEntry.appendLE(UInt32(fileData.count))
+            centralEntry.appendLE(UInt32(fileData.count))
+            centralEntry.appendLE(UInt16(fileNameData.count))
+            centralEntry.appendLE(UInt16(0))
+            centralEntry.appendLE(UInt16(0))
+            centralEntry.appendLE(UInt16(0))
+            centralEntry.appendLE(UInt16(0))
+            centralEntry.appendLE(UInt32(0))
+            centralEntry.appendLE(localHeaderOffset)
+            centralEntry.append(fileNameData)
+            centralDirectory.append(centralEntry)
 
             entryCount += 1
         }
 
-        let centralDirectoryOffset = UInt32(archive.count)
-        archive.append(centralDirectory)
+        let centralDirectoryOffset = currentOffset
+        try handle.write(contentsOf: centralDirectory)
 
-        archive.appendLE(endOfCentralDirectorySignature)
-        archive.appendLE(UInt16(0))
-        archive.appendLE(UInt16(0))
-        archive.appendLE(entryCount)
-        archive.appendLE(entryCount)
-        archive.appendLE(UInt32(centralDirectory.count))
-        archive.appendLE(centralDirectoryOffset)
-        archive.appendLE(UInt16(0))
-
-        try archive.write(to: zipURL, options: .atomic)
+        var endOfCentralDirectory = Data()
+        endOfCentralDirectory.appendLE(endOfCentralDirectorySignature)
+        endOfCentralDirectory.appendLE(UInt16(0))
+        endOfCentralDirectory.appendLE(UInt16(0))
+        endOfCentralDirectory.appendLE(entryCount)
+        endOfCentralDirectory.appendLE(entryCount)
+        endOfCentralDirectory.appendLE(UInt32(centralDirectory.count))
+        endOfCentralDirectory.appendLE(centralDirectoryOffset)
+        endOfCentralDirectory.appendLE(UInt16(0))
+        try handle.write(contentsOf: endOfCentralDirectory)
     }
 }
 

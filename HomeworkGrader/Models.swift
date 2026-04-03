@@ -3,23 +3,52 @@ import SwiftData
 
 private enum ArchiveDecodeCache {
     private static let lock = NSLock()
-    private static var pageEntries: [String: [Data]] = [:]
-    private static var gradeEntries: [String: [QuestionGradeRecord]] = [:]
+    private static var pageEntries: [String: PageCacheEntry] = [:]
+    private static var gradeEntries: [String: GradeCacheEntry] = [:]
+
+    private struct PageCacheEntry {
+        var pages: [Data]?
+        let fileURLs: [URL]?
+    }
+
+    private struct GradeCacheEntry {
+        let grades: [QuestionGradeRecord]
+        let hasQuestionNeedingReview: Bool
+    }
 
     static func pages(ownerID: UUID, archive: Data?) -> [Data] {
         let key = cacheKey(ownerID: ownerID, archive: archive)
-        return cachedValue(for: key, store: &pageEntries) {
-            guard let archive else { return [] }
-            return (try? JSONDecoder().decode([Data].self, from: archive)) ?? []
+        let entry = cachedPageEntry(for: key, archive: archive)
+        if let pages = entry.pages {
+            return pages
         }
+        guard let fileURLs = entry.fileURLs else { return [] }
+
+        let loadedPages = fileURLs.compactMap { fileURL in
+            try? Data(contentsOf: fileURL, options: .mappedIfSafe)
+        }
+        lock.lock()
+        if var cachedEntry = pageEntries[key] {
+            cachedEntry.pages = loadedPages
+            pageEntries[key] = cachedEntry
+        }
+        lock.unlock()
+        return loadedPages
+    }
+
+    static func pageFileURLs(ownerID: UUID, archive: Data?) -> [URL]? {
+        let key = cacheKey(ownerID: ownerID, archive: archive)
+        return cachedPageEntry(for: key, archive: archive).fileURLs
     }
 
     static func grades(ownerID: UUID, archive: Data?) -> [QuestionGradeRecord] {
         let key = cacheKey(ownerID: ownerID, archive: archive)
-        return cachedValue(for: key, store: &gradeEntries) {
-            guard let archive else { return [] }
-            return (try? JSONDecoder().decode([QuestionGradeRecord].self, from: archive)) ?? []
-        }
+        return cachedGradeEntry(for: key, archive: archive).grades
+    }
+
+    static func gradeNeedsReview(ownerID: UUID, archive: Data?) -> Bool {
+        let key = cacheKey(ownerID: ownerID, archive: archive)
+        return cachedGradeEntry(for: key, archive: archive).hasQuestionNeedingReview
     }
 
     static func storePages(_ pages: [Data], ownerID: UUID, archive: Data?) {
@@ -27,7 +56,15 @@ private enum ArchiveDecodeCache {
         lock.lock()
         defer { lock.unlock() }
         removeEntriesLocked(for: ownerID, from: &pageEntries)
-        pageEntries[key] = pages
+        pageEntries[key] = PageCacheEntry(pages: pages, fileURLs: nil)
+    }
+
+    static func storePageFiles(_ fileURLs: [URL], ownerID: UUID, archive: Data?) {
+        let key = cacheKey(ownerID: ownerID, archive: archive)
+        lock.lock()
+        defer { lock.unlock() }
+        removeEntriesLocked(for: ownerID, from: &pageEntries)
+        pageEntries[key] = PageCacheEntry(pages: nil, fileURLs: fileURLs)
     }
 
     static func storeGrades(_ grades: [QuestionGradeRecord], ownerID: UUID, archive: Data?) {
@@ -35,7 +72,10 @@ private enum ArchiveDecodeCache {
         lock.lock()
         defer { lock.unlock() }
         removeEntriesLocked(for: ownerID, from: &gradeEntries)
-        gradeEntries[key] = grades
+        gradeEntries[key] = GradeCacheEntry(
+            grades: grades,
+            hasQuestionNeedingReview: grades.contains(where: \.needsReview)
+        )
     }
 
     private static func cachedValue<Value>(
@@ -62,10 +102,86 @@ private enum ArchiveDecodeCache {
             .forEach { store.removeValue(forKey: $0) }
     }
 
+    private static func cachedPageEntry(for key: String, archive: Data?) -> PageCacheEntry {
+        cachedValue(for: key, store: &pageEntries) {
+            guard let archive else {
+                return PageCacheEntry(pages: [], fileURLs: nil)
+            }
+            if let stored = try? JSONDecoder().decode(StoredPageArchive.self, from: archive) {
+                let fileURLs = stored.filePaths.map(URL.init(fileURLWithPath:))
+                return PageCacheEntry(pages: nil, fileURLs: fileURLs)
+            }
+            let decodedPages = (try? JSONDecoder().decode([Data].self, from: archive)) ?? []
+            return PageCacheEntry(pages: decodedPages, fileURLs: nil)
+        }
+    }
+
+    private static func cachedGradeEntry(for key: String, archive: Data?) -> GradeCacheEntry {
+        cachedValue(for: key, store: &gradeEntries) {
+            guard let archive else {
+                return GradeCacheEntry(grades: [], hasQuestionNeedingReview: false)
+            }
+            let decoded = (try? JSONDecoder().decode([QuestionGradeRecord].self, from: archive)) ?? []
+            return GradeCacheEntry(
+                grades: decoded,
+                hasQuestionNeedingReview: decoded.contains(where: \.needsReview)
+            )
+        }
+    }
+
     private static func cacheKey(ownerID: UUID, archive: Data?) -> String {
         let archiveHash = archive.map { ($0 as NSData).hash } ?? 0
         let archiveCount = archive?.count ?? 0
         return "\(ownerID.uuidString)|\(archiveCount)|\(archiveHash)"
+    }
+}
+
+private struct StoredPageArchive: Codable {
+    let filePaths: [String]
+}
+
+private enum PersistedPageStorage {
+    static func persistPages(_ pages: [Data], ownerID: UUID, namespace: String) throws -> [URL] {
+        let directory = try prepareDirectory(ownerID: ownerID, namespace: namespace)
+        return try pages.enumerated().map { index, pageData in
+            let fileURL = directory.appendingPathComponent(String(format: "page-%04d.jpg", index + 1))
+            try pageData.write(to: fileURL, options: .atomic)
+            return fileURL
+        }
+    }
+
+    static func copyPages(from sourceFileURLs: [URL], ownerID: UUID, namespace: String) throws -> [URL] {
+        let directory = try prepareDirectory(ownerID: ownerID, namespace: namespace)
+        return try sourceFileURLs.enumerated().map { index, sourceFileURL in
+            let pathExtension = sourceFileURL.pathExtension.isEmpty ? "jpg" : sourceFileURL.pathExtension
+            let destinationURL = directory.appendingPathComponent(
+                String(format: "page-%04d.%@", index + 1, pathExtension)
+            )
+            try FileManager.default.copyItem(at: sourceFileURL, to: destinationURL)
+            return destinationURL
+        }
+    }
+
+    private static func prepareDirectory(ownerID: UUID, namespace: String) throws -> URL {
+        let root = try rootDirectory()
+        let directory = root
+            .appendingPathComponent(namespace, isDirectory: true)
+            .appendingPathComponent(ownerID.uuidString, isDirectory: true)
+
+        if FileManager.default.fileExists(atPath: directory.path) {
+            try FileManager.default.removeItem(at: directory)
+        }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    private static func rootDirectory() throws -> URL {
+        guard let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        let rootURL = baseURL.appendingPathComponent("HomeworkGraderPersistedPages", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        return rootURL
     }
 }
 
@@ -307,6 +423,8 @@ final class StudentSubmission {
 }
 
 extension GradingSession {
+    private static let persistedPageNamespace = "session-master-scans"
+
     var validationEnabledResolved: Bool {
         validationEnabled ?? true
     }
@@ -341,7 +459,7 @@ extension GradingSession {
     }
 
     var totalPossiblePoints: Double {
-        sortedQuestions.reduce(0) { $0 + $1.maxPoints }
+        questions.reduce(0) { $0 + $1.maxPoints }
     }
 
     var pointModeLabel: String {
@@ -409,13 +527,55 @@ extension GradingSession {
         ArchiveDecodeCache.pages(ownerID: id, archive: masterScanArchive)
     }
 
+    func masterScanFileURLs() -> [URL]? {
+        ArchiveDecodeCache.pageFileURLs(ownerID: id, archive: masterScanArchive)
+    }
+
     func setMasterScans(_ pages: [Data]) {
+        if let storedArchive = try? archiveForPersistedPages(pages) {
+            masterScanArchive = storedArchive.archive
+            ArchiveDecodeCache.storePageFiles(storedArchive.fileURLs, ownerID: id, archive: masterScanArchive)
+            return
+        }
         masterScanArchive = try? JSONEncoder().encode(pages)
         ArchiveDecodeCache.storePages(pages, ownerID: id, archive: masterScanArchive)
+    }
+
+    func setMasterScans(from fileURLs: [URL]) {
+        if let storedArchive = try? archiveForCopiedPages(fileURLs) {
+            masterScanArchive = storedArchive.archive
+            ArchiveDecodeCache.storePageFiles(storedArchive.fileURLs, ownerID: id, archive: masterScanArchive)
+            return
+        }
+        let pages = fileURLs.compactMap { try? Data(contentsOf: $0, options: .mappedIfSafe) }
+        masterScanArchive = try? JSONEncoder().encode(pages)
+        ArchiveDecodeCache.storePages(pages, ownerID: id, archive: masterScanArchive)
+    }
+
+    private func archiveForPersistedPages(_ pages: [Data]) throws -> (archive: Data, fileURLs: [URL]) {
+        let fileURLs = try PersistedPageStorage.persistPages(
+            pages,
+            ownerID: id,
+            namespace: Self.persistedPageNamespace
+        )
+        let archive = try JSONEncoder().encode(StoredPageArchive(filePaths: fileURLs.map(\.path)))
+        return (archive, fileURLs)
+    }
+
+    private func archiveForCopiedPages(_ fileURLs: [URL]) throws -> (archive: Data, fileURLs: [URL]) {
+        let persistedFileURLs = try PersistedPageStorage.copyPages(
+            from: fileURLs,
+            ownerID: id,
+            namespace: Self.persistedPageNamespace
+        )
+        let archive = try JSONEncoder().encode(StoredPageArchive(filePaths: persistedFileURLs.map(\.path)))
+        return (archive, persistedFileURLs)
     }
 }
 
 extension StudentSubmission {
+    private static let persistedPageNamespace = "submission-scans"
+
     var processingState: StudentSubmissionProcessingState {
         StudentSubmissionProcessingState(rawValue: processingStateRaw ?? "") ?? .completed
     }
@@ -442,14 +602,34 @@ extension StudentSubmission {
     }
 
     var hasQuestionNeedingReview: Bool {
-        questionGrades().contains(where: \.needsReview)
+        ArchiveDecodeCache.gradeNeedsReview(ownerID: id, archive: gradeArchive)
     }
 
     func scans() -> [Data] {
         ArchiveDecodeCache.pages(ownerID: id, archive: scanArchive)
     }
 
+    func scanFileURLs() -> [URL]? {
+        ArchiveDecodeCache.pageFileURLs(ownerID: id, archive: scanArchive)
+    }
+
     func setScans(_ pages: [Data]) {
+        if let storedArchive = try? archiveForPersistedPages(pages) {
+            scanArchive = storedArchive.archive
+            ArchiveDecodeCache.storePageFiles(storedArchive.fileURLs, ownerID: id, archive: scanArchive)
+            return
+        }
+        scanArchive = try? JSONEncoder().encode(pages)
+        ArchiveDecodeCache.storePages(pages, ownerID: id, archive: scanArchive)
+    }
+
+    func setScans(from fileURLs: [URL]) {
+        if let storedArchive = try? archiveForCopiedPages(fileURLs) {
+            scanArchive = storedArchive.archive
+            ArchiveDecodeCache.storePageFiles(storedArchive.fileURLs, ownerID: id, archive: scanArchive)
+            return
+        }
+        let pages = fileURLs.compactMap { try? Data(contentsOf: $0, options: .mappedIfSafe) }
         scanArchive = try? JSONEncoder().encode(pages)
         ArchiveDecodeCache.storePages(pages, ownerID: id, archive: scanArchive)
     }
@@ -463,5 +643,25 @@ extension StudentSubmission {
         ArchiveDecodeCache.storeGrades(grades, ownerID: id, archive: gradeArchive)
         totalScore = grades.reduce(0) { $0 + $1.awardedPoints }
         maxScore = grades.reduce(0) { $0 + $1.maxPoints }
+    }
+
+    private func archiveForPersistedPages(_ pages: [Data]) throws -> (archive: Data, fileURLs: [URL]) {
+        let fileURLs = try PersistedPageStorage.persistPages(
+            pages,
+            ownerID: id,
+            namespace: Self.persistedPageNamespace
+        )
+        let archive = try JSONEncoder().encode(StoredPageArchive(filePaths: fileURLs.map(\.path)))
+        return (archive, fileURLs)
+    }
+
+    private func archiveForCopiedPages(_ fileURLs: [URL]) throws -> (archive: Data, fileURLs: [URL]) {
+        let persistedFileURLs = try PersistedPageStorage.copyPages(
+            from: fileURLs,
+            ownerID: id,
+            namespace: Self.persistedPageNamespace
+        )
+        let archive = try JSONEncoder().encode(StoredPageArchive(filePaths: persistedFileURLs.map(\.path)))
+        return (archive, persistedFileURLs)
     }
 }
