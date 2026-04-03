@@ -16,6 +16,13 @@
 		A10000070000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000170000000000000001 /* Assets.xcassets */; };
 		A10000080000000000000001 /* HomeworkGraderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000180000000000000001 /* HomeworkGraderTests.swift */; };
 		A10000090000000000000001 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A100001A0000000000000001 /* LaunchScreen.storyboard */; };
+		B10000010000000000000001 /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000110000000000000001 /* SessionDetailView.swift */; };
+		B10000020000000000000001 /* SubmissionProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000120000000000000001 /* SubmissionProcessing.swift */; };
+		B10000030000000000000001 /* ReviewViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000130000000000000001 /* ReviewViews.swift */; };
+		B10000040000000000000001 /* SharedComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000140000000000000001 /* SharedComponents.swift */; };
+		B10000050000000000000001 /* RenderedContentViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000150000000000000001 /* RenderedContentViews.swift */; };
+		B10000060000000000000001 /* GradingDomain.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000160000000000000001 /* GradingDomain.swift */; };
+		B10000070000000000000001 /* SessionExporters.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000170000000000000001 /* SessionExporters.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -40,6 +47,13 @@
 		A10000180000000000000001 /* HomeworkGraderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeworkGraderTests.swift; sourceTree = "<group>"; };
 		A10000190000000000000001 /* HomeworkGraderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HomeworkGraderTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A100001A0000000000000001 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		B10000110000000000000001 /* SessionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDetailView.swift; sourceTree = "<group>"; };
+		B10000120000000000000001 /* SubmissionProcessing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubmissionProcessing.swift; sourceTree = "<group>"; };
+		B10000130000000000000001 /* ReviewViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewViews.swift; sourceTree = "<group>"; };
+		B10000140000000000000001 /* SharedComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedComponents.swift; sourceTree = "<group>"; };
+		B10000150000000000000001 /* RenderedContentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenderedContentViews.swift; sourceTree = "<group>"; };
+		B10000160000000000000001 /* GradingDomain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradingDomain.swift; sourceTree = "<group>"; };
+		B10000170000000000000001 /* SessionExporters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionExporters.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -75,9 +89,16 @@
 				A10000110000000000000001 /* HomeworkGraderApp.swift */,
 				A10000120000000000000001 /* ContentView.swift */,
 				A10000130000000000000001 /* Models.swift */,
+				B10000160000000000000001 /* GradingDomain.swift */,
 				A10000140000000000000001 /* OpenAIService.swift */,
+				B10000170000000000000001 /* SessionExporters.swift */,
 				A10000150000000000000001 /* AppSettings.swift */,
 				A10000160000000000000001 /* DocumentScanner.swift */,
+				B10000110000000000000001 /* SessionDetailView.swift */,
+				B10000120000000000000001 /* SubmissionProcessing.swift */,
+				B10000130000000000000001 /* ReviewViews.swift */,
+				B10000140000000000000001 /* SharedComponents.swift */,
+				B10000150000000000000001 /* RenderedContentViews.swift */,
 				A100001A0000000000000001 /* LaunchScreen.storyboard */,
 				A10000170000000000000001 /* Assets.xcassets */,
 			);
@@ -204,9 +225,16 @@
 				A10000050000000000000001 /* AppSettings.swift in Sources */,
 				A10000020000000000000001 /* ContentView.swift in Sources */,
 				A10000060000000000000001 /* DocumentScanner.swift in Sources */,
+				B10000060000000000000001 /* GradingDomain.swift in Sources */,
 				A10000010000000000000001 /* HomeworkGraderApp.swift in Sources */,
 				A10000030000000000000001 /* Models.swift in Sources */,
 				A10000040000000000000001 /* OpenAIService.swift in Sources */,
+				B10000050000000000000001 /* RenderedContentViews.swift in Sources */,
+				B10000030000000000000001 /* ReviewViews.swift in Sources */,
+				B10000070000000000000001 /* SessionExporters.swift in Sources */,
+				B10000010000000000000001 /* SessionDetailView.swift in Sources */,
+				B10000040000000000000001 /* SharedComponents.swift in Sources */,
+				B10000020000000000000001 /* SubmissionProcessing.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

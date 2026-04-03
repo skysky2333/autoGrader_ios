@@ -62,4 +62,36 @@ final class HomeworkGraderTests: XCTestCase {
         XCTAssertTrue(csv.contains("\"2/2\""))
         XCTAssertTrue(csv.contains("\"2/3\""))
     }
+
+    func testSubmissionBatchOrganizerSplitsPagesIntoEqualGroups() throws {
+        let pages = [
+            Data([0x01]),
+            Data([0x02]),
+            Data([0x03]),
+            Data([0x04]),
+            Data([0x05]),
+            Data([0x06]),
+        ]
+
+        let groups = try SubmissionBatchOrganizer.split(pages: pages, pagesPerSubmission: 2)
+
+        XCTAssertEqual(groups.count, 3)
+        XCTAssertEqual(groups[0], [Data([0x01]), Data([0x02])])
+        XCTAssertEqual(groups[2], [Data([0x05]), Data([0x06])])
+    }
+
+    func testSubmissionBatchOrganizerRejectsUnevenPageCounts() {
+        let pages = [
+            Data([0x01]),
+            Data([0x02]),
+            Data([0x03]),
+        ]
+
+        XCTAssertThrowsError(try SubmissionBatchOrganizer.split(pages: pages, pagesPerSubmission: 2)) { error in
+            XCTAssertEqual(
+                error as? SubmissionBatchOrganizerError,
+                .pageCountMismatch(totalPages: 3, pagesPerSubmission: 2)
+            )
+        }
+    }
 }
