@@ -132,19 +132,11 @@ struct SubmissionRow: View {
                 StatusChip(label: "Failed", color: .red)
             }
 
-            if submission.isProcessingCompleted && !submission.teacherReviewed {
-                StatusChip(label: "Unreviewed", color: .blue)
+            if submission.validationNeedsReviewEnabled {
+                StatusChip(label: "Validation Inconclusive", color: .orange)
             }
 
-            if submission.nameNeedsReviewEnabled {
-                StatusChip(label: "Name Review", color: .orange)
-            }
-
-            if submission.isProcessingCompleted && submission.totalScore + 0.001 < submission.maxScore {
-                StatusChip(label: "Not Full Score", color: .red)
-            }
-
-            if submission.isProcessingCompleted && submission.hasQuestionNeedingReview {
+            if submission.nameNeedsReviewEnabled || (submission.isProcessingCompleted && submission.hasQuestionNeedingReview) {
                 StatusChip(label: "Review Needed", color: .orange)
             }
         }
@@ -314,16 +306,12 @@ struct SubmissionDraftSummaryRow: View {
                     .foregroundStyle(.secondary)
             }
 
-            if draft.nameNeedsReview {
-                StatusChip(label: "Name Review", color: .orange)
+            if draft.validationNeedsReview {
+                StatusChip(label: "Validation Inconclusive", color: .orange)
             }
 
-            if draft.grades.contains(where: \.needsReview) {
+            if draft.nameNeedsReview || draft.grades.contains(where: \.needsReview) {
                 StatusChip(label: "Review Needed", color: .orange)
-            }
-
-            if draft.totalScore + 0.001 < draft.maxScore {
-                StatusChip(label: "Not Full Score", color: .red)
             }
         }
         .padding(.vertical, 4)

@@ -34,6 +34,7 @@ struct SubmissionDraft: Identifiable, Sendable {
     var id = UUID()
     var studentName: String
     var nameNeedsReview: Bool
+    var validationNeedsReview: Bool
     var overallNotes: String
     var grades: [QuestionGradeRecord]
     var pageData: [Data]
@@ -47,7 +48,10 @@ struct SubmissionDraft: Identifiable, Sendable {
     }
 
     var requiresAttention: Bool {
-        studentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || nameNeedsReview || grades.contains(where: \.needsReview)
+        studentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        nameNeedsReview ||
+        validationNeedsReview ||
+        grades.contains(where: \.needsReview)
     }
 
     var isPerfectScore: Bool {
@@ -208,6 +212,7 @@ extension SubmissionDraft {
         SubmissionDraft(
             studentName: submission.studentName,
             nameNeedsReview: submission.nameNeedsReviewEnabled,
+            validationNeedsReview: submission.validationNeedsReviewEnabled,
             overallNotes: submission.overallNotes,
             grades: submission.questionGrades(),
             pageData: submission.scans()
@@ -254,6 +259,7 @@ extension SubmissionDraft {
         return SubmissionDraft(
             studentName: payload.studentName.trimmingCharacters(in: .whitespacesAndNewlines),
             nameNeedsReview: payload.studentNameNeedsReview || payload.studentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            validationNeedsReview: false,
             overallNotes: payload.overallNotes,
             grades: grades,
             pageData: pageData
@@ -300,6 +306,7 @@ extension SubmissionDraft {
         return SubmissionDraft(
             studentName: payload.studentName.trimmingCharacters(in: .whitespacesAndNewlines),
             nameNeedsReview: payload.studentNameNeedsReview || payload.studentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            validationNeedsReview: false,
             overallNotes: payload.overallNotes,
             grades: grades,
             pageData: pageData

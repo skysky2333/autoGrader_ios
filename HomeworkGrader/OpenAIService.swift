@@ -738,6 +738,91 @@ final class OpenAIService: @unchecked Sendable {
         return body
     }
 
+    private func makeStructuredRequestBody(
+        modelID: String,
+        schemaName: String,
+        schema: [String: Any],
+        systemPrompt: String,
+        userText: String,
+        imageFileURLs: [URL],
+        reasoningEffort: String?,
+        verbosity: String?,
+        serviceTier: String?,
+        stream: Bool
+    ) throws -> [String: Any] {
+        var userContent: [[String: Any]] = [
+            [
+                "type": "input_text",
+                "text": userText,
+            ],
+        ]
+
+        for fileURL in imageFileURLs {
+            let imagePayload = try autoreleasepool {
+                let imageData = try Data(contentsOf: fileURL, options: .mappedIfSafe)
+                return [
+                    "type": "input_image",
+                    "image_url": makeDataURL(for: imageData),
+                    "detail": visionImageDetail,
+                ]
+            }
+            userContent.append(imagePayload)
+        }
+
+        var textConfig: [String: Any] = [
+            "format": [
+                "type": "json_schema",
+                "name": schemaName,
+                "strict": true,
+                "schema": schema,
+            ],
+        ]
+
+        if let verbosity {
+            textConfig["verbosity"] = verbosity
+        }
+
+        var body: [String: Any] = [
+            "model": modelID,
+            "store": false,
+            "input": [
+                [
+                    "role": "system",
+                    "content": [
+                        [
+                            "type": "input_text",
+                            "text": systemPrompt,
+                        ],
+                    ],
+                ],
+                [
+                    "role": "user",
+                    "content": userContent,
+                ],
+            ],
+            "text": textConfig,
+        ]
+
+        if stream {
+            body["stream"] = true
+            body["stream_options"] = [
+                "include_obfuscation": false,
+            ]
+        }
+
+        if let reasoningEffort {
+            body["reasoning"] = [
+                "effort": reasoningEffort,
+            ]
+        }
+
+        if let serviceTier {
+            body["service_tier"] = serviceTier
+        }
+
+        return body
+    }
+
     private func performStructuredRequest<T: Decodable>(
         apiKey: String,
         modelID: String,
@@ -849,21 +934,20 @@ final class OpenAIService: @unchecked Sendable {
         defer { try? handle.close() }
 
         for submission in submissions {
-            let images = try submission.pageFileURLs.map {
-                try Data(contentsOf: $0, options: .mappedIfSafe)
+            let body = try autoreleasepool {
+                try makeStructuredRequestBody(
+                    modelID: modelID,
+                    schemaName: definition.schemaName,
+                    schema: definition.schema,
+                    systemPrompt: definition.systemPrompt,
+                    userText: definition.userText,
+                    imageFileURLs: submission.pageFileURLs,
+                    reasoningEffort: reasoningEffort,
+                    verbosity: verbosity,
+                    serviceTier: nil,
+                    stream: false
+                )
             }
-            let body = makeStructuredRequestBody(
-                modelID: modelID,
-                schemaName: definition.schemaName,
-                schema: definition.schema,
-                systemPrompt: definition.systemPrompt,
-                userText: definition.userText,
-                images: images,
-                reasoningEffort: reasoningEffort,
-                verbosity: verbosity,
-                serviceTier: nil,
-                stream: false
-            )
 
             let lineObject: [String: Any] = [
                 "custom_id": submission.customID,

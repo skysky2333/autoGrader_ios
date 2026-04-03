@@ -65,28 +65,54 @@ struct SubmissionProcessor: Sendable {
         progress: (@Sendable (SubmissionProcessingStage) async -> Void)? = nil,
         transcript: (@Sendable (SubmissionRequestStreamEvent) async -> Void)? = nil
     ) async throws -> ProcessedSubmission {
-        var usageSummaries: [OpenAIUsageSummary] = []
+        let initialResult = try await makeInitialGradingResult(
+            pageData: pageData,
+            requestNamespace: requestNamespace,
+            requestLabelPrefix: requestLabelPrefix,
+            progress: progress,
+            transcript: transcript
+        )
+        return try await processValidatedSubmission(
+            initialGradingResult: initialResult,
+            pageData: pageData,
+            requestNamespace: requestNamespace,
+            requestLabelPrefix: requestLabelPrefix,
+            progress: progress,
+            transcript: transcript
+        )
+    }
 
-        func makeTranscriptHandler(
-            requestID: String,
-            title: String
-        ) -> (@Sendable (OpenAIStreamEvent) async -> Void)? {
-            guard let transcript else { return nil }
-            return { event in
-                await transcript(
-                    SubmissionRequestStreamEvent(
-                        requestID: requestID,
-                        title: title,
-                        event: event
-                    )
-                )
-            }
-        }
+    func validate(
+        initialPayload: SubmissionPayload,
+        initialUsage: OpenAIUsageSummary?,
+        pageData: [Data],
+        requestNamespace: String,
+        requestLabelPrefix: String,
+        progress: (@Sendable (SubmissionProcessingStage) async -> Void)? = nil,
+        transcript: (@Sendable (SubmissionRequestStreamEvent) async -> Void)? = nil
+    ) async throws -> ProcessedSubmission {
+        let initialResult = OpenAIResult(payload: initialPayload, usage: initialUsage)
+        return try await processValidatedSubmission(
+            initialGradingResult: initialResult,
+            pageData: pageData,
+            requestNamespace: requestNamespace,
+            requestLabelPrefix: requestLabelPrefix,
+            progress: progress,
+            transcript: transcript
+        )
+    }
 
+    private func makeInitialGradingResult(
+        pageData: [Data],
+        requestNamespace: String,
+        requestLabelPrefix: String,
+        progress: (@Sendable (SubmissionProcessingStage) async -> Void)?,
+        transcript: (@Sendable (SubmissionRequestStreamEvent) async -> Void)?
+    ) async throws -> OpenAIResult<SubmissionPayload> {
         if let progress {
             await progress(.grading)
         }
-        var gradingResult = try await OpenAIService.shared.gradeSubmission(
+        return try await OpenAIService.shared.gradeSubmission(
             apiKey: config.apiKey,
             modelID: config.gradingModelID,
             rubric: config.rubricSnapshots,
@@ -98,10 +124,23 @@ struct SubmissionProcessor: Sendable {
             verbosity: config.gradingVerbosity,
             serviceTier: config.gradingServiceTier,
             streamHandler: makeTranscriptHandler(
+                transcript: transcript,
                 requestID: "\(requestNamespace)-grade",
                 title: "\(requestLabelPrefix) • Grade"
             )
         )
+    }
+
+    private func processValidatedSubmission(
+        initialGradingResult: OpenAIResult<SubmissionPayload>,
+        pageData: [Data],
+        requestNamespace: String,
+        requestLabelPrefix: String,
+        progress: (@Sendable (SubmissionProcessingStage) async -> Void)?,
+        transcript: (@Sendable (SubmissionRequestStreamEvent) async -> Void)?
+    ) async throws -> ProcessedSubmission {
+        var usageSummaries: [OpenAIUsageSummary] = []
+        var gradingResult = initialGradingResult
         if let usage = gradingResult.usage {
             usageSummaries.append(usage)
         }
@@ -138,6 +177,7 @@ struct SubmissionProcessor: Sendable {
                 verbosity: config.validationVerbosity,
                 serviceTier: config.validationServiceTier,
                 streamHandler: makeTranscriptHandler(
+                    transcript: transcript,
                     requestID: "\(requestNamespace)-validate-\(attempt)",
                     title: "\(requestLabelPrefix) • Validate \(attempt)"
                 )
@@ -172,6 +212,7 @@ struct SubmissionProcessor: Sendable {
                 verbosity: config.gradingVerbosity,
                 serviceTier: config.gradingServiceTier,
                 streamHandler: makeTranscriptHandler(
+                    transcript: transcript,
                     requestID: "\(requestNamespace)-regrade-\(attempt)",
                     title: "\(requestLabelPrefix) • Regrade \(attempt)"
                 )
@@ -190,22 +231,34 @@ struct SubmissionProcessor: Sendable {
 
         if !validationApproved {
             var adjusted = draft
+            adjusted.validationNeedsReview = true
             adjusted.overallNotes = [
                 "Automated validation could not fully confirm this grading after multiple attempts.",
                 adjusted.overallNotes,
             ]
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .joined(separator: "\n\n")
-            adjusted.grades = adjusted.grades.map { grade in
-                var copy = grade
-                copy.needsReview = true
-                return copy
-            }
-            adjusted.nameNeedsReview = true
             draft = adjusted
         }
 
         return ProcessedSubmission(draft: draft, usageSummaries: usageSummaries)
+    }
+
+    private func makeTranscriptHandler(
+        transcript: (@Sendable (SubmissionRequestStreamEvent) async -> Void)?,
+        requestID: String,
+        title: String
+    ) -> (@Sendable (OpenAIStreamEvent) async -> Void)? {
+        guard let transcript else { return nil }
+        return { event in
+            await transcript(
+                SubmissionRequestStreamEvent(
+                    requestID: requestID,
+                    title: title,
+                    event: event
+                )
+            )
+        }
     }
 }
 

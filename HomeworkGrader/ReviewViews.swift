@@ -508,6 +508,12 @@ struct SavedSubmissionDetailView: View {
                             color: .orange
                         )
                     }
+                    if draft.validationNeedsReview {
+                        HighlightNotice(
+                            message: "Automated validation could not confirm this grading. Human review is recommended.",
+                            color: .orange
+                        )
+                    }
                     LabeledContent("Saved", value: submission.createdAt.formatted(date: .abbreviated, time: .shortened))
                     LabeledContent("Score", value: "\(ScoreFormatting.scoreString(draft.totalScore)) / \(ScoreFormatting.scoreString(draft.maxScore))")
                 }
@@ -590,6 +596,7 @@ struct SavedSubmissionDetailView: View {
         let normalized = draft.normalized(integerPointsOnly: integerPointsOnly)
         submission.studentName = normalized.studentName.trimmingCharacters(in: .whitespacesAndNewlines)
         submission.nameNeedsReview = normalized.nameNeedsReview
+        submission.validationNeedsReview = false
         submission.overallNotes = normalized.overallNotes.trimmingCharacters(in: .whitespacesAndNewlines)
         submission.teacherReviewed = true
         submission.processingStateRaw = StudentSubmissionProcessingState.completed.rawValue
@@ -681,9 +688,7 @@ struct RubricQuestionDetailView: View {
             }
         }
         .onDisappear {
-            if hasUnsavedChanges {
-                persistChanges(showFeedback: false)
-            }
+            scheduleAutosaveIfNeeded()
         }
         .keyboardDismissToolbar()
         .feedbackToast()
@@ -734,6 +739,15 @@ struct RubricQuestionDetailView: View {
             isSaving = false
         }
     }
+
+    private func scheduleAutosaveIfNeeded() {
+        guard hasUnsavedChanges, !isSaving else { return }
+        Task { @MainActor in
+            await Task.yield()
+            guard hasUnsavedChanges, !isSaving else { return }
+            persistChanges(showFeedback: false)
+        }
+    }
 }
 
 struct OverallRulesEditorView: View {
@@ -774,9 +788,7 @@ struct OverallRulesEditorView: View {
             }
         }
         .onDisappear {
-            if hasUnsavedChanges {
-                persistChanges(showFeedback: false)
-            }
+            scheduleAutosaveIfNeeded()
         }
         .keyboardDismissToolbar()
         .feedbackToast()
@@ -805,6 +817,15 @@ struct OverallRulesEditorView: View {
             await Task.yield()
             persistChanges(showFeedback: true)
             isSaving = false
+        }
+    }
+
+    private func scheduleAutosaveIfNeeded() {
+        guard hasUnsavedChanges, !isSaving else { return }
+        Task { @MainActor in
+            await Task.yield()
+            guard hasUnsavedChanges, !isSaving else { return }
+            persistChanges(showFeedback: false)
         }
     }
 }

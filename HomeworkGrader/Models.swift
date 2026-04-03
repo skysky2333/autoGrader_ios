@@ -12,8 +12,9 @@ private enum ArchiveDecodeCache {
     }
 
     private struct GradeCacheEntry {
-        let grades: [QuestionGradeRecord]
-        let hasQuestionNeedingReview: Bool
+        var grades: [QuestionGradeRecord]?
+        let fileURL: URL?
+        var hasQuestionNeedingReview: Bool?
     }
 
     static func pages(ownerID: UUID, archive: Data?) -> [Data] {
@@ -43,12 +44,33 @@ private enum ArchiveDecodeCache {
 
     static func grades(ownerID: UUID, archive: Data?) -> [QuestionGradeRecord] {
         let key = cacheKey(ownerID: ownerID, archive: archive)
-        return cachedGradeEntry(for: key, archive: archive).grades
+        let entry = cachedGradeEntry(for: key, archive: archive)
+        if let grades = entry.grades {
+            return grades
+        }
+        guard let fileURL = entry.fileURL else { return [] }
+
+        let loadedGrades = ((try? Data(contentsOf: fileURL, options: .mappedIfSafe))
+            .flatMap { try? JSONDecoder().decode([QuestionGradeRecord].self, from: $0) }) ?? []
+        let needsReview = loadedGrades.contains(where: \.needsReview)
+        lock.lock()
+        if var cachedEntry = gradeEntries[key] {
+            cachedEntry.grades = loadedGrades
+            cachedEntry.hasQuestionNeedingReview = needsReview
+            gradeEntries[key] = cachedEntry
+        }
+        lock.unlock()
+        return loadedGrades
     }
 
     static func gradeNeedsReview(ownerID: UUID, archive: Data?) -> Bool {
         let key = cacheKey(ownerID: ownerID, archive: archive)
-        return cachedGradeEntry(for: key, archive: archive).hasQuestionNeedingReview
+        let entry = cachedGradeEntry(for: key, archive: archive)
+        if let hasQuestionNeedingReview = entry.hasQuestionNeedingReview {
+            return hasQuestionNeedingReview
+        }
+        let grades = grades(ownerID: ownerID, archive: archive)
+        return grades.contains(where: \.needsReview)
     }
 
     static func storePages(_ pages: [Data], ownerID: UUID, archive: Data?) {
@@ -74,7 +96,20 @@ private enum ArchiveDecodeCache {
         removeEntriesLocked(for: ownerID, from: &gradeEntries)
         gradeEntries[key] = GradeCacheEntry(
             grades: grades,
+            fileURL: nil,
             hasQuestionNeedingReview: grades.contains(where: \.needsReview)
+        )
+    }
+
+    static func storeGradeFile(_ fileURL: URL, ownerID: UUID, archive: Data?, hasQuestionNeedingReview: Bool) {
+        let key = cacheKey(ownerID: ownerID, archive: archive)
+        lock.lock()
+        defer { lock.unlock() }
+        removeEntriesLocked(for: ownerID, from: &gradeEntries)
+        gradeEntries[key] = GradeCacheEntry(
+            grades: nil,
+            fileURL: fileURL,
+            hasQuestionNeedingReview: hasQuestionNeedingReview
         )
     }
 
@@ -119,11 +154,19 @@ private enum ArchiveDecodeCache {
     private static func cachedGradeEntry(for key: String, archive: Data?) -> GradeCacheEntry {
         cachedValue(for: key, store: &gradeEntries) {
             guard let archive else {
-                return GradeCacheEntry(grades: [], hasQuestionNeedingReview: false)
+                return GradeCacheEntry(grades: [], fileURL: nil, hasQuestionNeedingReview: false)
+            }
+            if let stored = try? JSONDecoder().decode(StoredGradeArchive.self, from: archive) {
+                return GradeCacheEntry(
+                    grades: nil,
+                    fileURL: URL(fileURLWithPath: stored.filePath),
+                    hasQuestionNeedingReview: stored.hasQuestionNeedingReview
+                )
             }
             let decoded = (try? JSONDecoder().decode([QuestionGradeRecord].self, from: archive)) ?? []
             return GradeCacheEntry(
                 grades: decoded,
+                fileURL: nil,
                 hasQuestionNeedingReview: decoded.contains(where: \.needsReview)
             )
         }
@@ -138,6 +181,11 @@ private enum ArchiveDecodeCache {
 
 private struct StoredPageArchive: Codable {
     let filePaths: [String]
+}
+
+private struct StoredGradeArchive: Codable {
+    let filePath: String
+    let hasQuestionNeedingReview: Bool
 }
 
 private enum PersistedPageStorage {
@@ -182,6 +230,28 @@ private enum PersistedPageStorage {
         let rootURL = baseURL.appendingPathComponent("HomeworkGraderPersistedPages", isDirectory: true)
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
         return rootURL
+    }
+}
+
+private enum PersistedGradeStorage {
+    static func persistGrades(_ grades: [QuestionGradeRecord], ownerID: UUID, namespace: String) throws -> URL {
+        guard let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        let directory = baseURL
+            .appendingPathComponent("HomeworkGraderPersistedGrades", isDirectory: true)
+            .appendingPathComponent(namespace, isDirectory: true)
+            .appendingPathComponent(ownerID.uuidString, isDirectory: true)
+
+        if FileManager.default.fileExists(atPath: directory.path) {
+            try FileManager.default.removeItem(at: directory)
+        }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let fileURL = directory.appendingPathComponent("grades.json")
+        let data = try JSONEncoder().encode(grades)
+        try data.write(to: fileURL, options: .atomic)
+        return fileURL
     }
 }
 
@@ -375,6 +445,7 @@ final class StudentSubmission {
     var createdAt: Date
     var studentName: String
     var nameNeedsReview: Bool?
+    var validationNeedsReview: Bool?
     var overallNotes: String
     var teacherReviewed: Bool
     var totalScore: Double
@@ -392,6 +463,7 @@ final class StudentSubmission {
         createdAt: Date = .now,
         studentName: String,
         nameNeedsReview: Bool = false,
+        validationNeedsReview: Bool = false,
         overallNotes: String,
         teacherReviewed: Bool,
         totalScore: Double,
@@ -408,6 +480,7 @@ final class StudentSubmission {
         self.createdAt = createdAt
         self.studentName = studentName
         self.nameNeedsReview = nameNeedsReview
+        self.validationNeedsReview = validationNeedsReview
         self.overallNotes = overallNotes
         self.teacherReviewed = teacherReviewed
         self.totalScore = totalScore
@@ -575,6 +648,7 @@ extension GradingSession {
 
 extension StudentSubmission {
     private static let persistedPageNamespace = "submission-scans"
+    private static let persistedGradeNamespace = "submission-grades"
 
     var processingState: StudentSubmissionProcessingState {
         StudentSubmissionProcessingState(rawValue: processingStateRaw ?? "") ?? .completed
@@ -599,6 +673,10 @@ extension StudentSubmission {
 
     var nameNeedsReviewEnabled: Bool {
         nameNeedsReview ?? false
+    }
+
+    var validationNeedsReviewEnabled: Bool {
+        validationNeedsReview ?? false
     }
 
     var hasQuestionNeedingReview: Bool {
@@ -639,8 +717,18 @@ extension StudentSubmission {
     }
 
     func setQuestionGrades(_ grades: [QuestionGradeRecord]) {
-        gradeArchive = try? JSONEncoder().encode(grades)
-        ArchiveDecodeCache.storeGrades(grades, ownerID: id, archive: gradeArchive)
+        if let storedArchive = try? archiveForPersistedGrades(grades) {
+            gradeArchive = storedArchive.archive
+            ArchiveDecodeCache.storeGradeFile(
+                storedArchive.fileURL,
+                ownerID: id,
+                archive: gradeArchive,
+                hasQuestionNeedingReview: storedArchive.hasQuestionNeedingReview
+            )
+        } else {
+            gradeArchive = try? JSONEncoder().encode(grades)
+            ArchiveDecodeCache.storeGrades(grades, ownerID: id, archive: gradeArchive)
+        }
         totalScore = grades.reduce(0) { $0 + $1.awardedPoints }
         maxScore = grades.reduce(0) { $0 + $1.maxPoints }
     }
@@ -663,5 +751,21 @@ extension StudentSubmission {
         )
         let archive = try JSONEncoder().encode(StoredPageArchive(filePaths: persistedFileURLs.map(\.path)))
         return (archive, persistedFileURLs)
+    }
+
+    private func archiveForPersistedGrades(_ grades: [QuestionGradeRecord]) throws -> (archive: Data, fileURL: URL, hasQuestionNeedingReview: Bool) {
+        let fileURL = try PersistedGradeStorage.persistGrades(
+            grades,
+            ownerID: id,
+            namespace: Self.persistedGradeNamespace
+        )
+        let hasQuestionNeedingReview = grades.contains(where: \.needsReview)
+        let archive = try JSONEncoder().encode(
+            StoredGradeArchive(
+                filePath: fileURL.path,
+                hasQuestionNeedingReview: hasQuestionNeedingReview
+            )
+        )
+        return (archive, fileURL, hasQuestionNeedingReview)
     }
 }

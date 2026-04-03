@@ -280,7 +280,7 @@ struct SessionDetailView: View {
             ShareSheet(items: [item.url])
         }
         .alert(item: $alertItem) { item in
-            Alert(title: Text("Homework Grader"), message: Text(item.message), dismissButton: .default(Text("OK")))
+            Alert(title: Text("HGrader"), message: Text(item.message), dismissButton: .default(Text("OK")))
         }
         .confirmationDialog("Delete this session?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete Session", role: .destructive) {
@@ -1044,6 +1044,7 @@ struct SessionDetailView: View {
         let submission = StudentSubmission(
             studentName: trimmedName,
             nameNeedsReview: approvedDraft.nameNeedsReview,
+            validationNeedsReview: false,
             overallNotes: approvedDraft.overallNotes.trimmingCharacters(in: .whitespacesAndNewlines),
             teacherReviewed: true,
             totalScore: approvedDraft.totalScore,
@@ -1200,8 +1201,20 @@ struct SessionDetailView: View {
         let pendingSubmissions = session.submissions.filter {
             $0.isProcessingPending && $0.remoteBatchID == snapshot.batchID
         }
+        let shouldShowValidationProgress = session.validationEnabledResolved && !pendingSubmissions.isEmpty
+        if shouldShowValidationProgress {
+            busyState = BusyOverlayState(
+                title: "Finalizing batch results",
+                detail: "Running validation for completed submissions"
+            )
+        }
+        defer {
+            if shouldShowValidationProgress {
+                busyState = nil
+            }
+        }
 
-        for submission in pendingSubmissions {
+        for (index, submission) in pendingSubmissions.enumerated() {
             guard let requestID = submission.remoteBatchRequestID else {
                 markSubmissionFailed(
                     submission,
@@ -1211,7 +1224,22 @@ struct SessionDetailView: View {
             }
 
             if let result = resultsByID[requestID] {
-                applyCompletedBatchResult(result, to: submission, apiKey: apiKey)
+                do {
+                    try await applyCompletedBatchResult(
+                        result,
+                        to: submission,
+                        apiKey: apiKey,
+                        submissionIndex: index + 1,
+                        totalSubmissions: pendingSubmissions.count
+                    )
+                } catch {
+                    applyBatchResultRequiringValidationReview(
+                        result,
+                        to: submission,
+                        message: "Validation could not finish automatically. \(error.localizedDescription)",
+                        apiKey: apiKey
+                    )
+                }
             } else if let message = errorsByID[requestID] {
                 markSubmissionFailed(submission, message: message)
             } else {
@@ -1226,18 +1254,73 @@ struct SessionDetailView: View {
     private func applyCompletedBatchResult(
         _ result: OpenAIBatchSubmissionResult<SubmissionPayload>,
         to submission: StudentSubmission,
+        apiKey: String,
+        submissionIndex: Int,
+        totalSubmissions: Int
+    ) async throws {
+        let pageData = submission.scans()
+        let processed = try await makeSubmissionProcessor(apiKey: apiKey).validate(
+            initialPayload: result.payload,
+            initialUsage: result.usage,
+            pageData: pageData,
+            requestNamespace: "batch-\(submission.id.uuidString)",
+            requestLabelPrefix: "Batch Submission \(submissionIndex)",
+            progress: { stage in
+                await MainActor.run {
+                    updateBusyPresentation(
+                        title: "Finalizing batch results",
+                        detail: "Submission \(submissionIndex) of \(totalSubmissions): \(stage.singleSubmissionDetail)",
+                        progressLabel: "Validated \(submissionIndex - 1) of \(totalSubmissions)",
+                        progressValue: totalSubmissions == 0 ? nil : Double(submissionIndex - 1) / Double(totalSubmissions)
+                    )
+                }
+            }
+        )
+        let draft = processed.draft.normalized(integerPointsOnly: session.integerPointsOnlyEnabled)
+
+        submission.studentName = draft.studentName.trimmingCharacters(in: .whitespacesAndNewlines)
+        submission.nameNeedsReview = draft.nameNeedsReview
+        submission.validationNeedsReview = draft.validationNeedsReview
+        submission.overallNotes = draft.overallNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        submission.teacherReviewed = false
+        submission.processingStateRaw = StudentSubmissionProcessingState.completed.rawValue
+        submission.processingDetail = nil
+        submission.setQuestionGrades(draft.grades)
+        for usage in processed.usageSummaries {
+            recordUsage(usage, apiKey: apiKey, persistChanges: false)
+        }
+        updateBusyPresentation(
+            title: "Finalizing batch results",
+            detail: "Validated submission \(submissionIndex) of \(totalSubmissions)",
+            progressLabel: "Validated \(submissionIndex) of \(totalSubmissions)",
+            progressValue: totalSubmissions == 0 ? nil : Double(submissionIndex) / Double(totalSubmissions)
+        )
+    }
+
+    private func applyBatchResultRequiringValidationReview(
+        _ result: OpenAIBatchSubmissionResult<SubmissionPayload>,
+        to submission: StudentSubmission,
+        message: String,
         apiKey: String
     ) {
-        let draft = SubmissionDraft.from(
+        var draft = SubmissionDraft.from(
             payload: result.payload,
             rubricSnapshots: session.sortedQuestions.map(\.snapshot),
             pageData: submission.scans(),
             integerPointsOnly: session.integerPointsOnlyEnabled
         )
         .normalized(integerPointsOnly: session.integerPointsOnlyEnabled)
+        draft.validationNeedsReview = true
+        draft.overallNotes = [
+            message,
+            draft.overallNotes,
+        ]
+        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        .joined(separator: "\n\n")
 
         submission.studentName = draft.studentName.trimmingCharacters(in: .whitespacesAndNewlines)
         submission.nameNeedsReview = draft.nameNeedsReview
+        submission.validationNeedsReview = true
         submission.overallNotes = draft.overallNotes.trimmingCharacters(in: .whitespacesAndNewlines)
         submission.teacherReviewed = false
         submission.processingStateRaw = StudentSubmissionProcessingState.completed.rawValue
@@ -1263,6 +1346,7 @@ struct SessionDetailView: View {
         submission.processingDetail = message
         submission.overallNotes = message
         submission.teacherReviewed = false
+        submission.validationNeedsReview = false
         submission.setQuestionGrades([])
         submission.totalScore = 0
         submission.maxScore = session.totalPossiblePoints
@@ -1436,13 +1520,10 @@ struct SessionDetailView: View {
 
     private var filteredSubmissions: [StudentSubmission] {
         let trimmed = resultsSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let filtered = trimmed.isEmpty
-            ? session.submissions
-            : session.submissions.filter {
-                $0.listDisplayName.localizedCaseInsensitiveContains(trimmed)
-            }
-        return filtered.sorted { lhs, rhs in
-            lhs.createdAt > rhs.createdAt
+        let sortedSubmissions = session.sortedSubmissions
+        guard !trimmed.isEmpty else { return sortedSubmissions }
+        return sortedSubmissions.filter {
+            $0.listDisplayName.localizedCaseInsensitiveContains(trimmed)
         }
     }
 

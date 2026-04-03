@@ -48,7 +48,7 @@ struct ContentView: View {
                     .listStyle(.insetGrouped)
                 }
             }
-            .navigationTitle("Homework Grader")
+            .navigationTitle("HGrader")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Settings") {
