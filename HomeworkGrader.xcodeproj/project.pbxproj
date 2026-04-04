@@ -23,6 +23,8 @@
 		B10000050000000000000001 /* RenderedContentViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000150000000000000001 /* RenderedContentViews.swift */; };
 		B10000060000000000000001 /* GradingDomain.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000160000000000000001 /* GradingDomain.swift */; };
 		B10000070000000000000001 /* SessionExporters.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000170000000000000001 /* SessionExporters.swift */; };
+		B10000080000000000000001 /* Notifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000180000000000000001 /* Notifications.swift */; };
+		B10000090000000000000001 /* BackgroundBatchRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000190000000000000001 /* BackgroundBatchRefresh.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -54,6 +56,8 @@
 		B10000150000000000000001 /* RenderedContentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenderedContentViews.swift; sourceTree = "<group>"; };
 		B10000160000000000000001 /* GradingDomain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradingDomain.swift; sourceTree = "<group>"; };
 		B10000170000000000000001 /* SessionExporters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionExporters.swift; sourceTree = "<group>"; };
+		B10000180000000000000001 /* Notifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Notifications.swift; sourceTree = "<group>"; };
+		B10000190000000000000001 /* BackgroundBatchRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundBatchRefresh.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -99,6 +103,8 @@
 				B10000130000000000000001 /* ReviewViews.swift */,
 				B10000140000000000000001 /* SharedComponents.swift */,
 				B10000150000000000000001 /* RenderedContentViews.swift */,
+				B10000180000000000000001 /* Notifications.swift */,
+				B10000190000000000000001 /* BackgroundBatchRefresh.swift */,
 				A100001A0000000000000001 /* LaunchScreen.storyboard */,
 				A10000170000000000000001 /* Assets.xcassets */,
 			);
@@ -228,6 +234,8 @@
 				B10000060000000000000001 /* GradingDomain.swift in Sources */,
 				A10000010000000000000001 /* HomeworkGraderApp.swift in Sources */,
 				A10000030000000000000001 /* Models.swift in Sources */,
+				B10000090000000000000001 /* BackgroundBatchRefresh.swift in Sources */,
+				B10000080000000000000001 /* Notifications.swift in Sources */,
 				A10000040000000000000001 /* OpenAIService.swift in Sources */,
 				B10000050000000000000001 /* RenderedContentViews.swift in Sources */,
 				B10000030000000000000001 /* ReviewViews.swift in Sources */,
@@ -304,21 +312,16 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = L57NK97723;
+					CODE_SIGN_STYLE = Automatic;
+					CURRENT_PROJECT_VERSION = 1;
+					DEVELOPMENT_TEAM = L57NK97723;
 					ENABLE_PREVIEWS = YES;
 					ENABLE_TESTABILITY = YES;
-					GENERATE_INFOPLIST_FILE = YES;
-					INFOPLIST_KEY_CFBundleDisplayName = HGrader;
-					INFOPLIST_KEY_CFBundleName = HGrader;
-					INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
-					INFOPLIST_KEY_NSCameraUsageDescription = "HGrader scans exams and homework with the camera.";
-					INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
+					GENERATE_INFOPLIST_FILE = NO;
+					INFOPLIST_FILE = HomeworkGrader/Info.plist;
+					LD_RUNPATH_SEARCH_PATHS = (
+						"$(inherited)",
+						"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.HomeworkGrader;
@@ -334,23 +337,18 @@
 		};
 		A10000360000000000000001 /* Release */ = {
 			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				buildSettings = {
+					ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+					ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 					CODE_SIGN_STYLE = Automatic;
 					CURRENT_PROJECT_VERSION = 1;
 					DEVELOPMENT_TEAM = L57NK97723;
 					ENABLE_PREVIEWS = YES;
-					GENERATE_INFOPLIST_FILE = YES;
-					INFOPLIST_KEY_CFBundleDisplayName = HGrader;
-					INFOPLIST_KEY_CFBundleName = HGrader;
-					INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
-					INFOPLIST_KEY_NSCameraUsageDescription = "HGrader scans exams and homework with the camera.";
-					INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
+					GENERATE_INFOPLIST_FILE = NO;
+					INFOPLIST_FILE = HomeworkGrader/Info.plist;
+					LD_RUNPATH_SEARCH_PATHS = (
+						"$(inherited)",
+						"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.HomeworkGrader;

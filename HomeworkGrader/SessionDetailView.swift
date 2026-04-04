@@ -118,6 +118,11 @@ private struct ActiveCaptureFlow: Identifiable, Equatable {
     }
 }
 
+private struct PreparedSingleScanRequest {
+    let apiKey: String
+    let pageData: [Data]
+}
+
 @MainActor
 struct SessionDetailView: View {
     @Environment(\.dismiss) private var dismiss
@@ -141,6 +146,7 @@ struct SessionDetailView: View {
     @State private var busyState: BusyOverlayState?
     @State private var preparingState: BusyOverlayState?
     @State private var showingDeleteConfirmation = false
+    @State private var showingRegradeAllConfirmation = false
     @State private var pendingBatchPagesPerSubmission: Int?
     @State private var isEditingOverviewConfig = false
     @State private var draftAnswerModelID = ""
@@ -159,9 +165,13 @@ struct SessionDetailView: View {
     @State private var draftAnswerServiceTier: String? = nil
     @State private var draftGradingServiceTier: String? = nil
     @State private var draftValidationServiceTier: String? = nil
+    @State private var draftValidationMaxAttempts = 2
     @State private var isSavingOverviewConfig = false
+    @State private var isRefreshingPendingRubric = false
+    @State private var lastPendingRubricRefreshAt: Date?
     @State private var isRefreshingPendingBatches = false
     @State private var lastPendingBatchRefreshAt: Date?
+    @State private var submissionBeingRegraded: StudentSubmission?
 
     var body: some View {
         Form {
@@ -258,12 +268,20 @@ struct SessionDetailView: View {
                 rubricReviewState = nil
             }
         }
-        .sheet(item: $submissionDraft) { draft in
+        .sheet(item: $submissionDraft, onDismiss: {
+            submissionBeingRegraded = nil
+        }) { draft in
             SubmissionReviewView(
                 draft: draft,
                 integerPointsOnly: session.integerPointsOnlyEnabled,
+                showsSaveAndScanNext: submissionBeingRegraded == nil,
                 onSave: { approvedDraft in
-                    saveSubmission(approvedDraft)
+                    if let submissionBeingRegraded {
+                        updateSubmission(submissionBeingRegraded, with: approvedDraft)
+                    } else {
+                        saveSubmission(approvedDraft)
+                    }
+                    self.submissionBeingRegraded = nil
                     submissionDraft = nil
                 },
                 onSaveAndScanNext: { approvedDraft in
@@ -274,7 +292,12 @@ struct SessionDetailView: View {
             )
         }
         .sheet(item: $selectedSubmission) { submission in
-            SavedSubmissionDetailView(submission: submission)
+            SavedSubmissionDetailView(submission: submission) {
+                selectedSubmission = nil
+                Task {
+                    await regradeSubmission(submission)
+                }
+            }
         }
         .sheet(item: $shareItem) { item in
             ShareSheet(items: [item.url])
@@ -289,6 +312,16 @@ struct SessionDetailView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This removes the rubric, scans, and saved results for this session.")
+        }
+        .confirmationDialog("Regrade all saved scans?", isPresented: $showingRegradeAllConfirmation, titleVisibility: .visible) {
+            Button("Regrade All Saved Scans") {
+                Task {
+                    await regradeAllSavedSubmissions()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This keeps the scanned pages, clears the current grading state, and submits every saved submission for regrading.")
         }
         .onChange(of: showingScanSourcePicker) { _, newValue in
             if newValue {
@@ -312,7 +345,16 @@ struct SessionDetailView: View {
             }
         }
         .task {
+            await refreshPendingRubricGeneration(force: false)
             await refreshPendingBatchSubmissions(force: false)
+        }
+        .task(id: pendingRubricPollingID) {
+            guard !pendingRubricPollingID.isEmpty else { return }
+            while !Task.isCancelled && session.hasPendingRubricGeneration {
+                await refreshPendingRubricGeneration(force: false)
+                guard session.hasPendingRubricGeneration else { break }
+                try? await Task.sleep(nanoseconds: 12_000_000_000)
+            }
         }
         .overlay {
             if let overlayState = busyState ?? preparingState {
@@ -351,16 +393,104 @@ struct SessionDetailView: View {
     private var overviewSections: some View {
         if session.questions.isEmpty {
             Section("Blank Assignment") {
-                Button {
-                    startMasterScan()
-                } label: {
-                    Label("Scan Blank Assignment", systemImage: "doc.viewfinder")
+                if session.hasPendingRubricReview {
+                    Button {
+                        openPendingRubricReview()
+                    } label: {
+                        Label("Review Generated Answer Key", systemImage: "checklist")
+                    }
+                    .disabled(session.hasPendingRubricGeneration)
+                } else {
+                    Button {
+                        startMasterScan()
+                    } label: {
+                        Label("Scan Blank Assignment", systemImage: "doc.viewfinder")
+                    }
+                    .disabled(!hasAPIKey || session.hasPendingRubricGeneration)
                 }
-                .disabled(!hasAPIKey)
 
-                Text(hasAPIKey ? "Scan the teacher copy or blank exam pages, then review the generated rubric before grading students." : "Add your API key in Settings first.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                if session.hasPendingRubricGeneration {
+                    Text("The answer key request has been sent. The app will keep checking in the background and open the rubric review as soon as it finishes.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else if session.hasPendingRubricReview {
+                    Text("A generated answer key is ready to review and approve.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else if session.hasFailedRubricGeneration {
+                    Text("The last answer key request did not finish. Review the status below, then rescan when ready.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(hasAPIKey ? "Scan the teacher copy or blank exam pages, then review the generated rubric before grading students." : "Add your API key in Settings first.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if !session.masterScans().isEmpty {
+                Section(session.hasPendingRubricGeneration ? "Pending Master Pages" : "Master Pages") {
+                    ImageStripView(pageData: session.masterScans())
+                }
+            }
+
+            if !session.masterScans().isEmpty {
+                Section("Student Scans") {
+                    Button {
+                        startBatchStudentScan()
+                    } label: {
+                        Label("Batch Add Student Scans", systemImage: "square.stack.3d.down.right")
+                    }
+                    .disabled(session.isFinished)
+
+                    Text("You can scan student submissions now, even before the rubric is approved. HGrader will save the scans first and let you submit them all after the rubric is ready.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if session.hasPendingRubricGeneration || session.hasFailedRubricGeneration {
+                Section("Answer Key Status") {
+                    if session.hasPendingRubricGeneration {
+                        Button {
+                            Task {
+                                await refreshPendingRubricGeneration(force: true)
+                            }
+                        } label: {
+                            Label(isRefreshingPendingRubric ? "Checking Answer Key..." : "Check Answer Key", systemImage: "arrow.clockwise")
+                        }
+                        .disabled(isRefreshingPendingRubric)
+
+                        if isRefreshingPendingRubric {
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Checking OpenAI for the latest answer key status...")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } else if let lastPendingRubricRefreshAt {
+                            Text("Last checked \(lastPendingRubricRefreshAt.formatted(date: .omitted, time: .shortened)).")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if let detail = session.rubricProcessingDetail, !detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(detail)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if session.hasFailedRubricGeneration {
+                        Button {
+                            startMasterScan()
+                        } label: {
+                            Label("Rescan Blank Assignment", systemImage: "arrow.clockwise.circle")
+                        }
+                        .disabled(!hasAPIKey)
+                    }
+                }
             }
         } else {
             Section("Grade Next Student") {
@@ -436,7 +566,8 @@ struct SessionDetailView: View {
                     validationVerbosity: $draftValidationVerbosity,
                     answerServiceTier: $draftAnswerServiceTier,
                     gradingServiceTier: $draftGradingServiceTier,
-                    validationServiceTier: $draftValidationServiceTier
+                    validationServiceTier: $draftValidationServiceTier,
+                    validationMaxAttempts: $draftValidationMaxAttempts
                 )
             }
 
@@ -449,6 +580,7 @@ struct SessionDetailView: View {
             LabeledContent("Answer tier", value: session.answerServiceTierLabel)
             LabeledContent("Grading tier", value: session.gradingServiceTierLabel)
             LabeledContent("Validation tier", value: session.validationServiceTierLabel)
+            LabeledContent("Validation max attempts", value: session.validationMaxAttemptsLabel)
 
             if isEditingOverviewConfig {
                 HStack {
@@ -550,6 +682,24 @@ struct SessionDetailView: View {
                 Label("Export Full Session Package", systemImage: "archivebox")
             }
             .disabled(session.submissions.isEmpty)
+
+            Button {
+                showingRegradeAllConfirmation = true
+            } label: {
+                Label("Regrade All Saved Scans", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .disabled(session.submissions.isEmpty || hasRefreshablePendingBatchSubmissions || !hasAPIKey || session.questions.isEmpty)
+
+            if hasQueuedBatchSubmissions {
+                Button {
+                    Task {
+                        await submitQueuedScansForGrading()
+                    }
+                } label: {
+                    Label("Submit All Queued Scans", systemImage: "paperplane")
+                }
+                .disabled(!hasAPIKey || session.questions.isEmpty || hasRefreshablePendingBatchSubmissions)
+            }
         }
 
         Section("Search") {
@@ -559,7 +709,7 @@ struct SessionDetailView: View {
         }
 
         Section("Saved Results") {
-            if hasPendingBatchSubmissions {
+            if hasRefreshablePendingBatchSubmissions {
                 Button {
                     Task {
                         await refreshPendingBatchSubmissions(force: true)
@@ -588,21 +738,31 @@ struct SessionDetailView: View {
                 }
             }
 
+            if hasQueuedBatchSubmissions {
+                Text(
+                    session.questions.isEmpty
+                        ? "Queued scans are saved locally. Approve the rubric first, then tap Submit All Queued Scans."
+                        : "Queued scans are ready. Tap Submit All Queued Scans to start grading."
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+
             if filteredSubmissions.isEmpty {
                 Text("No student submissions saved yet.")
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(filteredSubmissions) { submission in
                     Group {
-                        if submission.isProcessingCompleted {
+                        if submission.isProcessingPending {
+                            SubmissionRow(submission: submission)
+                        } else {
                             Button {
                                 selectedSubmission = submission
                             } label: {
                                 SubmissionRow(submission: submission)
                             }
                             .buttonStyle(.plain)
-                        } else {
-                            SubmissionRow(submission: submission)
                         }
                     }
                 }
@@ -639,6 +799,7 @@ struct SessionDetailView: View {
         draftAnswerServiceTier = session.answerServiceTier
         draftGradingServiceTier = session.gradingServiceTier
         draftValidationServiceTier = session.validationServiceTier
+        draftValidationMaxAttempts = session.validationMaxAttemptsResolved
         isEditingOverviewConfig = true
     }
 
@@ -665,6 +826,7 @@ struct SessionDetailView: View {
         session.answerServiceTier = draftAnswerServiceTier
         session.gradingServiceTier = draftGradingServiceTier
         session.validationServiceTier = draftValidationServiceTier
+        session.validationMaxAttempts = draftValidationMaxAttempts
 
         if !wasIntegerOnly && draftIntegerPointsOnly {
             normalizeSessionToIntegerPoints()
@@ -812,10 +974,36 @@ struct SessionDetailView: View {
     }
 
     @MainActor
+    private func prepareSingleScanRequest(
+        from fileURLs: [URL],
+        preparingTitle: String
+    ) async -> PreparedSingleScanRequest? {
+        busyState = BusyOverlayState(title: preparingTitle, detail: "Optimizing captured pages")
+        let pageData = await ScanImagePreparation.makeJPEGPageData(from: fileURLs) { completed, total in
+            await MainActor.run {
+                updateBusyPresentation(
+                    title: preparingTitle,
+                    detail: "Optimizing captured pages",
+                    progressLabel: "Optimized \(completed) of \(total)",
+                    progressValue: total == 0 ? nil : Double(completed) / Double(total)
+                )
+            }
+        }
+        guard !pageData.isEmpty else {
+            busyState = nil
+            alertItem = AlertItem(message: "The scan did not contain any pages.")
+            return nil
+        }
+
+        let apiKey = KeychainStore.shared.string(for: AppSecrets.openAIKey) ?? ""
+        return PreparedSingleScanRequest(apiKey: apiKey, pageData: pageData)
+    }
+
+    @MainActor
     private func generateRubric(from fileURLs: [URL]) async {
         defer { ScanCaptureStorage.removeFiles(at: fileURLs) }
         busyState = BusyOverlayState(title: "Preparing scan", detail: "Optimizing captured pages")
-        let pageData = await ScanImagePreparation.makeJPEGPageData(from: fileURLs) { completed, total in
+        let optimizedPageFileURLs = await ScanImagePreparation.makeOptimizedJPEGFiles(from: fileURLs) { completed, total in
             await MainActor.run {
                 updateBusyPresentation(
                     title: "Preparing scan",
@@ -825,46 +1013,55 @@ struct SessionDetailView: View {
                 )
             }
         }
-        guard !pageData.isEmpty else {
+        defer { ScanCaptureStorage.removeFiles(at: optimizedPageFileURLs) }
+
+        guard !optimizedPageFileURLs.isEmpty else {
             busyState = nil
             alertItem = AlertItem(message: "The scan did not contain any pages.")
             return
         }
 
         let apiKey = KeychainStore.shared.string(for: AppSecrets.openAIKey) ?? ""
-        defer { busyState = nil }
+        session.setMasterScans(from: optimizedPageFileURLs)
+        session.setPendingRubricPayload(nil)
+        session.clearRubricGenerationState()
 
         do {
-            updateBusyPresentation(title: "Generating answer key", detail: "Uploading optimized scan pages")
-            let result = try await OpenAIService.shared.generateAnswerKey(
+            updateBusyPresentation(
+                title: "Submitting answer key",
+                detail: "Uploading the scan and waiting for the OpenAI batch id. Do not close the app until this step finishes."
+            )
+
+            let requestID = "answer-key-\(session.id.uuidString)-\(UUID().uuidString)"
+            let creation = try await OpenAIService.shared.createAnswerKeyBatch(
                 apiKey: apiKey,
                 modelID: session.answerModelID,
                 sessionTitle: session.title,
-                pageData: pageData,
+                submissions: [
+                    OpenAIBatchAnswerKeyInput(
+                        customID: requestID,
+                        pageFileURLs: optimizedPageFileURLs
+                    ),
+                ],
                 reasoningEffort: session.answerReasoningEffort,
-                verbosity: session.answerVerbosity,
-                serviceTier: session.answerServiceTier,
-                streamHandler: { event in
-                    await MainActor.run {
-                        applyBusyStreamEvent(
-                            event,
-                            sourceID: "answer-key",
-                            sourceTitle: "Answer Key"
-                        )
-                    }
-                }
+                verbosity: session.answerVerbosity
             )
 
-            recordUsage(result.usage, apiKey: apiKey)
+            session.markRubricGenerationPending(
+                batchID: creation.batchID,
+                requestID: requestID,
+                detail: detailTextForBatchStatus(status: creation.status, requestCounts: nil)
+            )
+            try? modelContext.save()
 
-            guard !result.payload.questions.isEmpty else {
-                alertItem = AlertItem(message: "The model did not return any gradeable questions. Try rescanning the blank assignment.")
-                return
-            }
-
-            rubricReviewState = .from(payload: result.payload, pageData: pageData, integerPointsOnly: session.integerPointsOnlyEnabled)
-                .normalized(integerPointsOnly: session.integerPointsOnlyEnabled)
+            busyState = nil
+            await AppNotificationCoordinator.shared.requestAuthorizationIfNeeded()
+            feedbackCenter.show("Answer key submitted. HGrader will keep checking until it is ready.", tone: .info)
+            await refreshPendingRubricGeneration(force: true)
         } catch {
+            busyState = nil
+            session.markRubricGenerationFailed(message: error.localizedDescription)
+            try? modelContext.save()
             alertItem = AlertItem(message: error.localizedDescription)
         }
     }
@@ -872,24 +1069,9 @@ struct SessionDetailView: View {
     @MainActor
     private func gradeSubmission(from fileURLs: [URL]) async {
         defer { ScanCaptureStorage.removeFiles(at: fileURLs) }
-        busyState = BusyOverlayState(title: "Preparing submission", detail: "Optimizing captured pages")
-        let pageData = await ScanImagePreparation.makeJPEGPageData(from: fileURLs) { completed, total in
-            await MainActor.run {
-                updateBusyPresentation(
-                    title: "Preparing submission",
-                    detail: "Optimizing captured pages",
-                    progressLabel: "Optimized \(completed) of \(total)",
-                    progressValue: total == 0 ? nil : Double(completed) / Double(total)
-                )
-            }
-        }
-        guard !pageData.isEmpty else {
-            busyState = nil
-            alertItem = AlertItem(message: "The scan did not contain any pages.")
-            return
-        }
-
-        let apiKey = KeychainStore.shared.string(for: AppSecrets.openAIKey) ?? ""
+        guard let request = await prepareSingleScanRequest(from: fileURLs, preparingTitle: "Preparing submission") else { return }
+        let pageData = request.pageData
+        let apiKey = request.apiKey
         let processor = makeSubmissionProcessor(apiKey: apiKey)
         defer { busyState = nil }
 
@@ -959,13 +1141,26 @@ struct SessionDetailView: View {
             return
         }
 
-        let apiKey = KeychainStore.shared.string(for: AppSecrets.openAIKey) ?? ""
         defer { busyState = nil }
 
+        if session.questions.isEmpty {
+            let queuedSubmissions = createQueuedBatchSubmissions(for: pageGroups)
+            selectedTab = .results
+            feedbackCenter.show(
+                "Added \(queuedSubmissions.count) student scan sets. They will stay queued until the rubric is approved.",
+                tone: .info
+            )
+            return
+        }
+
+        let apiKey = KeychainStore.shared.string(for: AppSecrets.openAIKey) ?? ""
         let placeholders = createPendingBatchSubmissions(for: pageGroups)
 
         do {
-            updateBusyPresentation(title: "Submitting batch job", detail: "Uploading requests to OpenAI")
+            updateBusyPresentation(
+                title: "Submitting batch job",
+                detail: "Uploading requests to OpenAI and waiting for the batch id. Do not close the app until this step finishes."
+            )
 
             let batchInputs = zip(placeholders, pageGroups).compactMap { submission, pageData -> OpenAIBatchSubmissionInput? in
                 guard let customID = submission.remoteBatchRequestID else { return nil }
@@ -998,6 +1193,7 @@ struct SessionDetailView: View {
 
             try? modelContext.save()
             selectedTab = .results
+            await AppNotificationCoordinator.shared.requestAuthorizationIfNeeded()
 
             alertItem = AlertItem(
                 message: "Submitted \(placeholders.count) submissions to the OpenAI Batch API. They now appear in Results as pending and will update when the batch finishes."
@@ -1012,6 +1208,8 @@ struct SessionDetailView: View {
 
     private func saveRubric(overallRules: String, approvedDrafts: [RubricQuestionDraft], pageData: [Data]) {
         session.setMasterScans(pageData)
+        session.setPendingRubricPayload(nil)
+        session.clearRubricGenerationState()
         let trimmedOverallRules = overallRules.trimmingCharacters(in: .whitespacesAndNewlines)
         session.overallGradingRules = trimmedOverallRules.isEmpty ? nil : trimmedOverallRules
 
@@ -1039,6 +1237,17 @@ struct SessionDetailView: View {
         feedbackCenter.show("Rubric saved.")
     }
 
+    private func openPendingRubricReview() {
+        guard let payload = session.pendingRubricPayload() else { return }
+        rubricReviewState = RubricReviewState
+            .from(
+                payload: payload,
+                pageData: session.masterScans(),
+                integerPointsOnly: session.integerPointsOnlyEnabled
+            )
+            .normalized(integerPointsOnly: session.integerPointsOnlyEnabled)
+    }
+
     private func saveSubmission(_ approvedDraft: SubmissionDraft, persistChanges: Bool = true) {
         let trimmedName = approvedDraft.studentName.trimmingCharacters(in: .whitespacesAndNewlines)
         let submission = StudentSubmission(
@@ -1062,11 +1271,314 @@ struct SessionDetailView: View {
         }
     }
 
+    private func updateSubmission(_ submission: StudentSubmission, with approvedDraft: SubmissionDraft) {
+        let normalized = approvedDraft.normalized(integerPointsOnly: session.integerPointsOnlyEnabled)
+        let trimmedName = normalized.studentName.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        submission.studentName = trimmedName
+        submission.nameNeedsReview = normalized.nameNeedsReview
+        submission.validationNeedsReview = normalized.validationNeedsReview
+        submission.overallNotes = normalized.overallNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        submission.teacherReviewed = true
+        submission.processingStateRaw = StudentSubmissionProcessingState.completed.rawValue
+        submission.processingDetail = nil
+        submission.setQuestionGrades(normalized.grades)
+        submission.clearBatchPipelineState()
+        try? modelContext.save()
+        feedbackCenter.show(trimmedName.isEmpty ? "Submission regraded." : "Regraded \(trimmedName).")
+    }
+
     private func saveSubmissions(_ approvedDrafts: [SubmissionDraft]) {
         for draft in approvedDrafts {
             saveSubmission(draft.normalized(integerPointsOnly: session.integerPointsOnlyEnabled), persistChanges: false)
         }
         try? modelContext.save()
+    }
+
+    @MainActor
+    private func regradeSubmission(_ submission: StudentSubmission) async {
+        guard hasAPIKey else {
+            alertItem = AlertItem(message: "Add your OpenAI API key in Settings before regrading.")
+            return
+        }
+
+        let pageData = submission.scans()
+        guard !pageData.isEmpty else {
+            alertItem = AlertItem(message: "This submission no longer has saved scan pages to regrade.")
+            return
+        }
+
+        let apiKey = KeychainStore.shared.string(for: AppSecrets.openAIKey) ?? ""
+        let processor = makeSubmissionProcessor(apiKey: apiKey)
+        defer { busyState = nil }
+
+        do {
+            updateBusyPresentation(title: "Regrading submission", detail: "Sending saved pages for grading")
+
+            let processed = try await processor.grade(
+                pageData: pageData,
+                requestNamespace: "saved-regrade-\(submission.id.uuidString)",
+                requestLabelPrefix: submission.listDisplayName,
+                progress: { stage in
+                    await MainActor.run {
+                        updateBusyPresentation(
+                            title: "Regrading submission",
+                            detail: stage.singleSubmissionDetail
+                        )
+                    }
+                },
+                transcript: { update in
+                    await MainActor.run {
+                        applyBusyStreamEvent(
+                            update.event,
+                            sourceID: update.requestID,
+                            sourceTitle: update.title
+                        )
+                    }
+                }
+            )
+
+            for usage in processed.usageSummaries {
+                recordUsage(usage, apiKey: apiKey, persistChanges: false)
+            }
+            if !processed.usageSummaries.isEmpty {
+                try? modelContext.save()
+            }
+
+            submissionBeingRegraded = submission
+            submissionDraft = processed.draft
+        } catch {
+            alertItem = AlertItem(message: error.localizedDescription)
+        }
+    }
+
+    @MainActor
+    private func regradeAllSavedSubmissions() async {
+        guard hasAPIKey else {
+            alertItem = AlertItem(message: "Add your OpenAI API key in Settings before regrading.")
+            return
+        }
+        guard !hasRefreshablePendingBatchSubmissions else {
+            alertItem = AlertItem(message: "Wait for the current pending grading jobs to finish before starting a bulk regrade.")
+            return
+        }
+
+        let eligibleSubmissions = session.submissions.filter { !$0.isProcessingPending }
+        guard !eligibleSubmissions.isEmpty else {
+            alertItem = AlertItem(message: "There are no saved submissions available to regrade.")
+            return
+        }
+
+        let apiKey = KeychainStore.shared.string(for: AppSecrets.openAIKey) ?? ""
+        var batchEntries: [(submission: StudentSubmission, requestID: String, pageFileURLs: [URL])] = []
+        var skippedCount = 0
+
+        for submission in eligibleSubmissions {
+            guard let pageFileURLs = ensureSubmissionScanFileURLs(for: submission), !pageFileURLs.isEmpty else {
+                skippedCount += 1
+                continue
+            }
+
+            batchEntries.append((
+                submission: submission,
+                requestID: "regradeall-\(submission.id.uuidString)-\(UUID().uuidString)",
+                pageFileURLs: pageFileURLs
+            ))
+        }
+
+        guard !batchEntries.isEmpty else {
+            alertItem = AlertItem(message: "None of the saved submissions still have scan pages available for regrading.")
+            return
+        }
+
+        do {
+            updateBusyPresentation(
+                title: "Submitting regrade batch",
+                detail: "Uploading saved scans to OpenAI and waiting for the batch id. Do not close the app until this step finishes."
+            )
+
+            let creation = try await OpenAIService.shared.createSubmissionGradingBatch(
+                apiKey: apiKey,
+                modelID: session.gradingModelID,
+                rubric: session.sortedQuestions.map(\.snapshot),
+                overallRules: session.overallGradingRules,
+                submissions: batchEntries.map {
+                    OpenAIBatchSubmissionInput(
+                        customID: $0.requestID,
+                        pageFileURLs: $0.pageFileURLs
+                    )
+                },
+                integerPointsOnly: session.integerPointsOnlyEnabled,
+                relaxedGradingMode: session.relaxedGradingModeEnabled,
+                reasoningEffort: session.gradingReasoningEffort,
+                verbosity: session.gradingVerbosity
+            )
+
+            for entry in batchEntries {
+                prepareSubmissionForBulkRegrade(
+                    entry.submission,
+                    requestID: entry.requestID,
+                    batchID: creation.batchID,
+                    batchStatus: creation.status
+                )
+            }
+
+            try? modelContext.save()
+            busyState = nil
+            selectedTab = .results
+            await AppNotificationCoordinator.shared.requestAuthorizationIfNeeded()
+
+            let skippedMessage = skippedCount > 0 ? " \(skippedCount) skipped because scans were missing." : ""
+            feedbackCenter.show(
+                "Submitted \(batchEntries.count) saved submissions for regrading.\(skippedMessage)",
+                tone: .info
+            )
+            await refreshPendingBatchSubmissions(force: true)
+        } catch {
+            busyState = nil
+            alertItem = AlertItem(message: error.localizedDescription)
+        }
+    }
+
+    private func prepareSubmissionForBulkRegrade(
+        _ submission: StudentSubmission,
+        requestID: String,
+        batchID: String,
+        batchStatus: String
+    ) {
+        submission.processingStateRaw = StudentSubmissionProcessingState.pending.rawValue
+        submission.batchStageRaw = StudentSubmissionBatchStage.grading.rawValue
+        submission.batchAttemptNumber = 0
+        submission.processingDetail = detailTextForBatchStatus(status: batchStatus, requestCounts: nil)
+        submission.remoteBatchID = batchID
+        submission.remoteBatchRequestID = requestID
+        submission.teacherReviewed = false
+        submission.validationNeedsReview = false
+        submission.overallNotes = "Regrading requested."
+        submission.setLatestSubmissionPayload(nil)
+        submission.setLatestValidationPayload(nil)
+        submission.setQuestionGrades([])
+        submission.maxScore = session.totalPossiblePoints
+    }
+
+    @MainActor
+    private func submitQueuedScansForGrading() async {
+        guard hasAPIKey else {
+            alertItem = AlertItem(message: "Add your OpenAI API key in Settings before submitting queued scans.")
+            return
+        }
+        guard !session.questions.isEmpty else {
+            alertItem = AlertItem(message: "Approve the rubric before submitting queued scans.")
+            return
+        }
+        guard !hasRefreshablePendingBatchSubmissions else {
+            alertItem = AlertItem(message: "Wait for the current pending grading jobs to finish before submitting queued scans.")
+            return
+        }
+
+        let queuedSubmissions = session.submissions.filter(\.isQueuedForRubric)
+        guard !queuedSubmissions.isEmpty else {
+            alertItem = AlertItem(message: "There are no queued scans ready to submit.")
+            return
+        }
+
+        let apiKey = KeychainStore.shared.string(for: AppSecrets.openAIKey) ?? ""
+        var batchEntries: [(submission: StudentSubmission, requestID: String, pageFileURLs: [URL])] = []
+        var skippedCount = 0
+
+        for submission in queuedSubmissions {
+            guard let pageFileURLs = ensureSubmissionScanFileURLs(for: submission), !pageFileURLs.isEmpty else {
+                skippedCount += 1
+                markSubmissionFailed(submission, message: "Saved scan pages were missing, so this queued submission could not be submitted.")
+                continue
+            }
+
+            batchEntries.append((
+                submission: submission,
+                requestID: "queued-\(submission.id.uuidString)-\(UUID().uuidString)",
+                pageFileURLs: pageFileURLs
+            ))
+        }
+
+        guard !batchEntries.isEmpty else {
+            try? modelContext.save()
+            alertItem = AlertItem(message: "None of the queued submissions still had scan pages available for submission.")
+            return
+        }
+
+        do {
+            updateBusyPresentation(
+                title: "Submitting queued scans",
+                detail: "Uploading the queued scans to OpenAI and waiting for the batch id. Do not close the app until this step finishes."
+            )
+
+            let creation = try await OpenAIService.shared.createSubmissionGradingBatch(
+                apiKey: apiKey,
+                modelID: session.gradingModelID,
+                rubric: session.sortedQuestions.map(\.snapshot),
+                overallRules: session.overallGradingRules,
+                submissions: batchEntries.map {
+                    OpenAIBatchSubmissionInput(
+                        customID: $0.requestID,
+                        pageFileURLs: $0.pageFileURLs
+                    )
+                },
+                integerPointsOnly: session.integerPointsOnlyEnabled,
+                relaxedGradingMode: session.relaxedGradingModeEnabled,
+                reasoningEffort: session.gradingReasoningEffort,
+                verbosity: session.gradingVerbosity
+            )
+
+            for entry in batchEntries {
+                prepareSubmissionForBulkRegrade(
+                    entry.submission,
+                    requestID: entry.requestID,
+                    batchID: creation.batchID,
+                    batchStatus: creation.status
+                )
+                entry.submission.overallNotes = "Queued scans submitted for grading."
+            }
+
+            try? modelContext.save()
+            busyState = nil
+            selectedTab = .results
+            await AppNotificationCoordinator.shared.requestAuthorizationIfNeeded()
+
+            let skippedMessage = skippedCount > 0 ? " \(skippedCount) could not be submitted because scans were missing." : ""
+            feedbackCenter.show(
+                "Submitted \(batchEntries.count) queued scan sets for grading.\(skippedMessage)",
+                tone: .info
+            )
+            await refreshPendingBatchSubmissions(force: true)
+        } catch {
+            busyState = nil
+            alertItem = AlertItem(message: error.localizedDescription)
+        }
+    }
+
+    private func createQueuedBatchSubmissions(for pageGroups: [[URL]]) -> [StudentSubmission] {
+        let queuedSubmissions = pageGroups.enumerated().map { index, pageFileURLs in
+            let submission = StudentSubmission(
+                studentName: "Queued Submission \(index + 1)",
+                nameNeedsReview: false,
+                overallNotes: "Saved scan. Waiting for rubric approval before submission.",
+                teacherReviewed: false,
+                totalScore: 0,
+                maxScore: session.totalPossiblePoints,
+                processingStateRaw: StudentSubmissionProcessingState.pending.rawValue,
+                batchStageRaw: StudentSubmissionBatchStage.queued.rawValue,
+                batchAttemptNumber: nil,
+                processingDetail: "Saved scan. Waiting for rubric approval before submission.",
+                session: session
+            )
+            submission.setScans(from: pageFileURLs)
+            modelContext.insert(submission)
+            session.submissions.append(submission)
+            return submission
+        }
+
+        try? modelContext.save()
+        return queuedSubmissions
     }
 
     private func createPendingBatchSubmissions(for pageGroups: [[URL]]) -> [StudentSubmission] {
@@ -1079,6 +1591,8 @@ struct SessionDetailView: View {
                 totalScore: 0,
                 maxScore: session.totalPossiblePoints,
                 processingStateRaw: StudentSubmissionProcessingState.pending.rawValue,
+                batchStageRaw: StudentSubmissionBatchStage.grading.rawValue,
+                batchAttemptNumber: 0,
                 processingDetail: "Preparing batch submission",
                 remoteBatchRequestID: "submission-\(UUID().uuidString)",
                 session: session
@@ -1104,8 +1618,105 @@ struct SessionDetailView: View {
     }
 
     @MainActor
+    private func refreshPendingRubricGeneration(force: Bool) async {
+        guard session.hasPendingRubricGeneration else { return }
+        guard !isRefreshingPendingRubric else { return }
+        guard hasAPIKey else { return }
+
+        if
+            !force,
+            let lastPendingRubricRefreshAt,
+            Date.now.timeIntervalSince(lastPendingRubricRefreshAt) < 12
+        {
+            return
+        }
+
+        guard
+            let batchID = session.rubricRemoteBatchID,
+            let requestID = session.rubricRemoteBatchRequestID
+        else {
+            session.markRubricGenerationFailed(message: "The saved answer key request is missing its batch metadata.")
+            try? modelContext.save()
+            return
+        }
+
+        let apiKey = KeychainStore.shared.string(for: AppSecrets.openAIKey) ?? ""
+        isRefreshingPendingRubric = true
+        lastPendingRubricRefreshAt = .now
+        defer { isRefreshingPendingRubric = false }
+
+        do {
+            let snapshot = try await OpenAIService.shared.fetchBatchStatus(
+                apiKey: apiKey,
+                batchID: batchID
+            )
+
+            switch snapshot.status {
+            case "completed":
+                try await finalizeCompletedRubricBatch(
+                    snapshot,
+                    requestID: requestID,
+                    apiKey: apiKey
+                )
+            case "failed", "expired", "cancelled":
+                let message = snapshot.errors.first ?? detailTextForBatchStatus(
+                    status: snapshot.status,
+                    requestCounts: snapshot.requestCounts
+                )
+                session.markRubricGenerationFailed(message: message)
+            default:
+                session.rubricProcessingDetail = detailTextForBatchStatus(
+                    status: snapshot.status,
+                    requestCounts: snapshot.requestCounts
+                )
+            }
+        } catch {
+            session.rubricProcessingDetail = "Unable to refresh answer key status. \(error.localizedDescription)"
+        }
+
+        try? modelContext.save()
+    }
+
+    @MainActor
+    private func finalizeCompletedRubricBatch(
+        _ snapshot: OpenAIBatchStatusSnapshot,
+        requestID: String,
+        apiKey: String
+    ) async throws {
+        let results = try await fetchAnswerKeyBatchResults(snapshot: snapshot, apiKey: apiKey)
+        let errors = try await fetchBatchErrors(snapshot: snapshot, apiKey: apiKey)
+        let result = results.first { $0.customID == requestID }
+        let errorMessage = errors.first { $0.customID == requestID }?.message
+
+        if let result {
+            recordUsage(result.usage, apiKey: apiKey)
+
+            guard !result.payload.questions.isEmpty else {
+                session.markRubricGenerationFailed(
+                    message: "The model did not return any gradeable questions. Try rescanning the blank assignment."
+                )
+                return
+            }
+
+            session.setPendingRubricPayload(result.payload)
+            session.clearRubricGenerationState()
+            try? modelContext.save()
+
+            openPendingRubricReview()
+            await AppNotificationCoordinator.shared.notifyAnswerKeyReady(sessionTitle: session.title)
+            feedbackCenter.show("Answer key ready for review.", tone: .info)
+        } else if let errorMessage {
+            session.markRubricGenerationFailed(message: errorMessage)
+        } else {
+            session.markRubricGenerationFailed(
+                message: "OpenAI completed the answer key batch but did not return a result."
+            )
+        }
+    }
+
+    @MainActor
     private func refreshPendingBatchSubmissions(force: Bool) async {
-        guard hasPendingBatchSubmissions else { return }
+        guard hasRefreshablePendingBatchSubmissions else { return }
         guard !isRefreshingPendingBatches else { return }
         guard hasAPIKey else { return }
 
@@ -1119,10 +1730,8 @@ struct SessionDetailView: View {
 
         let apiKey = KeychainStore.shared.string(for: AppSecrets.openAIKey) ?? ""
         let batchIDs = Array(Set(session.submissions.compactMap { submission in
-            submission.isProcessingPending ? submission.remoteBatchID : nil
+            submission.hasRemoteBatchInFlight ? submission.remoteBatchID : nil
         }))
-
-        guard !batchIDs.isEmpty else { return }
 
         let summaryBeforeRefresh = batchRefreshSummary
         isRefreshingPendingBatches = true
@@ -1144,10 +1753,29 @@ struct SessionDetailView: View {
             }
         }
 
+        if !hasActivePendingBatchRequests {
+            do {
+                try await submitQueuedBatchPipelineStages(apiKey: apiKey)
+            } catch {
+                for submission in session.submissions where submission.isProcessingPending && !submission.hasRemoteBatchInFlight {
+                    submission.processingDetail = "Automatic batch submission failed. \(error.localizedDescription)"
+                }
+            }
+        }
+
         try? modelContext.save()
 
+        let summaryAfterRefresh = batchRefreshSummary
+        if summaryBeforeRefresh.pending > 0 && summaryAfterRefresh.pending == 0 {
+            await AppNotificationCoordinator.shared.notifyBatchGradingFinished(
+                sessionTitle: session.title,
+                completed: summaryAfterRefresh.completed,
+                failed: summaryAfterRefresh.failed
+            )
+        }
+
         if force {
-            feedbackCenter.show(batchRefreshFeedbackMessage(before: summaryBeforeRefresh, after: batchRefreshSummary), tone: .info)
+            feedbackCenter.show(batchRefreshFeedbackMessage(before: summaryBeforeRefresh, after: summaryAfterRefresh), tone: .info)
         }
     }
 
@@ -1175,69 +1803,58 @@ struct SessionDetailView: View {
 
     @MainActor
     private func finalizeCompletedBatch(_ snapshot: OpenAIBatchStatusSnapshot, apiKey: String) async throws {
-        let results: [OpenAIBatchSubmissionResult<SubmissionPayload>]
-        if let outputFileID = snapshot.outputFileID {
-            results = try await OpenAIService.shared.fetchSubmissionBatchResults(
-                apiKey: apiKey,
-                modelID: session.gradingModelID,
-                outputFileID: outputFileID
-            )
-        } else {
-            results = []
-        }
-
-        let errors: [OpenAIBatchSubmissionError]
-        if let errorFileID = snapshot.errorFileID {
-            errors = try await OpenAIService.shared.fetchBatchErrors(
-                apiKey: apiKey,
-                errorFileID: errorFileID
-            )
-        } else {
-            errors = []
-        }
-
-        let resultsByID = Dictionary(uniqueKeysWithValues: results.map { ($0.customID, $0) })
-        let errorsByID = Dictionary(uniqueKeysWithValues: errors.map { ($0.customID, $0.message) })
         let pendingSubmissions = session.submissions.filter {
             $0.isProcessingPending && $0.remoteBatchID == snapshot.batchID
         }
-        let shouldShowValidationProgress = session.validationEnabledResolved && !pendingSubmissions.isEmpty
-        if shouldShowValidationProgress {
-            busyState = BusyOverlayState(
-                title: "Finalizing batch results",
-                detail: "Running validation for completed submissions"
-            )
-        }
-        defer {
-            if shouldShowValidationProgress {
-                busyState = nil
-            }
-        }
+        guard !pendingSubmissions.isEmpty else { return }
 
-        for (index, submission) in pendingSubmissions.enumerated() {
+        switch pendingSubmissions.compactMap(\.batchStage).first ?? .grading {
+        case .queued:
+            return
+        case .grading:
+            try await finalizeCompletedGradingBatch(snapshot, pendingSubmissions: pendingSubmissions, apiKey: apiKey)
+        case .validating:
+            try await finalizeCompletedValidationBatch(snapshot, pendingSubmissions: pendingSubmissions, apiKey: apiKey)
+        case .regrading:
+            try await finalizeCompletedRegradingBatch(snapshot, pendingSubmissions: pendingSubmissions, apiKey: apiKey)
+        }
+    }
+
+    @MainActor
+    private func finalizeCompletedGradingBatch(
+        _ snapshot: OpenAIBatchStatusSnapshot,
+        pendingSubmissions: [StudentSubmission],
+        apiKey: String
+    ) async throws {
+        let results = try await fetchSubmissionBatchResults(snapshot: snapshot, modelID: session.gradingModelID, apiKey: apiKey)
+        let errors = try await fetchBatchErrors(snapshot: snapshot, apiKey: apiKey)
+        let resultsByID = Dictionary(uniqueKeysWithValues: results.map { ($0.customID, $0) })
+        let errorsByID = Dictionary(uniqueKeysWithValues: errors.map { ($0.customID, $0.message) })
+
+        for submission in pendingSubmissions {
             guard let requestID = submission.remoteBatchRequestID else {
-                markSubmissionFailed(
-                    submission,
-                    message: "This batch submission is missing its request identifier."
-                )
+                markSubmissionFailed(submission, message: "This batch submission is missing its request identifier.")
                 continue
             }
 
             if let result = resultsByID[requestID] {
-                do {
-                    try await applyCompletedBatchResult(
-                        result,
-                        to: submission,
-                        apiKey: apiKey,
-                        submissionIndex: index + 1,
-                        totalSubmissions: pendingSubmissions.count
+                recordUsage(result.usage, apiKey: apiKey, persistChanges: false)
+                submission.setLatestSubmissionPayload(result.payload)
+                submission.setLatestValidationPayload(nil)
+
+                if session.validationEnabledResolved {
+                    queueSubmissionForBatchStage(
+                        submission,
+                        stage: .validating,
+                        attempt: 1,
+                        detail: "Queued for validation pass 1."
                     )
-                } catch {
-                    applyBatchResultRequiringValidationReview(
-                        result,
-                        to: submission,
-                        message: "Validation could not finish automatically. \(error.localizedDescription)",
-                        apiKey: apiKey
+                } else {
+                    completeSubmission(
+                        submission,
+                        from: result.payload,
+                        validationNeedsReview: false,
+                        reviewMessage: nil
                     )
                 }
             } else if let message = errorsByID[requestID] {
@@ -1251,32 +1868,303 @@ struct SessionDetailView: View {
         }
     }
 
-    private func applyCompletedBatchResult(
-        _ result: OpenAIBatchSubmissionResult<SubmissionPayload>,
-        to submission: StudentSubmission,
-        apiKey: String,
-        submissionIndex: Int,
-        totalSubmissions: Int
+    @MainActor
+    private func finalizeCompletedValidationBatch(
+        _ snapshot: OpenAIBatchStatusSnapshot,
+        pendingSubmissions: [StudentSubmission],
+        apiKey: String
     ) async throws {
-        let pageData = submission.scans()
-        let processed = try await makeSubmissionProcessor(apiKey: apiKey).validate(
-            initialPayload: result.payload,
-            initialUsage: result.usage,
-            pageData: pageData,
-            requestNamespace: "batch-\(submission.id.uuidString)",
-            requestLabelPrefix: "Batch Submission \(submissionIndex)",
-            progress: { stage in
-                await MainActor.run {
-                    updateBusyPresentation(
-                        title: "Finalizing batch results",
-                        detail: "Submission \(submissionIndex) of \(totalSubmissions): \(stage.singleSubmissionDetail)",
-                        progressLabel: "Validated \(submissionIndex - 1) of \(totalSubmissions)",
-                        progressValue: totalSubmissions == 0 ? nil : Double(submissionIndex - 1) / Double(totalSubmissions)
+        let validationModelID = session.validationModelIDResolved
+        let results = try await fetchValidationBatchResults(snapshot: snapshot, modelID: validationModelID, apiKey: apiKey)
+        let errors = try await fetchBatchErrors(snapshot: snapshot, apiKey: apiKey)
+        let resultsByID = Dictionary(uniqueKeysWithValues: results.map { ($0.customID, $0) })
+        let errorsByID = Dictionary(uniqueKeysWithValues: errors.map { ($0.customID, $0.message) })
+
+        for submission in pendingSubmissions {
+            guard let requestID = submission.remoteBatchRequestID else {
+                finalizeSubmissionWithValidationReview(
+                    submission,
+                    message: "This validation batch submission is missing its request identifier."
+                )
+                continue
+            }
+
+            if let result = resultsByID[requestID] {
+                recordUsage(result.usage, apiKey: apiKey, persistChanges: false)
+                submission.setLatestValidationPayload(result.payload)
+
+                if result.payload.isGradingCorrect {
+                    guard let payload = submission.latestSubmissionPayload() else {
+                        markSubmissionFailed(
+                            submission,
+                            message: "Validation completed but the latest grading payload was missing."
+                        )
+                        continue
+                    }
+                    completeSubmission(
+                        submission,
+                        from: payload,
+                        validationNeedsReview: false,
+                        reviewMessage: nil
+                    )
+                } else if submission.currentBatchAttemptNumber >= session.validationMaxAttemptsResolved {
+                    let validationAttemptLabel = session.validationMaxAttemptsResolved == 1
+                        ? "1 validation attempt"
+                        : "\(session.validationMaxAttemptsResolved) validation attempts"
+                    finalizeSubmissionWithValidationReview(
+                        submission,
+                        message: "Automated validation could not fully confirm this grading after \(validationAttemptLabel)."
+                    )
+                } else {
+                    queueSubmissionForBatchStage(
+                        submission,
+                        stage: .regrading,
+                        attempt: submission.currentBatchAttemptNumber,
+                        detail: "Queued for regrade pass \(submission.currentBatchAttemptNumber) after validation pass \(submission.currentBatchAttemptNumber)."
                     )
                 }
+            } else if let message = errorsByID[requestID] {
+                finalizeSubmissionWithValidationReview(
+                    submission,
+                    message: "Validation batch could not finish automatically. \(message)"
+                )
+            } else {
+                finalizeSubmissionWithValidationReview(
+                    submission,
+                    message: "OpenAI completed the validation batch but did not return a result for this submission."
+                )
             }
+        }
+    }
+
+    @MainActor
+    private func finalizeCompletedRegradingBatch(
+        _ snapshot: OpenAIBatchStatusSnapshot,
+        pendingSubmissions: [StudentSubmission],
+        apiKey: String
+    ) async throws {
+        let results = try await fetchSubmissionBatchResults(snapshot: snapshot, modelID: session.gradingModelID, apiKey: apiKey)
+        let errors = try await fetchBatchErrors(snapshot: snapshot, apiKey: apiKey)
+        let resultsByID = Dictionary(uniqueKeysWithValues: results.map { ($0.customID, $0) })
+        let errorsByID = Dictionary(uniqueKeysWithValues: errors.map { ($0.customID, $0.message) })
+
+        for submission in pendingSubmissions {
+            guard let requestID = submission.remoteBatchRequestID else {
+                finalizeSubmissionWithValidationReview(
+                    submission,
+                    message: "This regrade batch submission is missing its request identifier."
+                )
+                continue
+            }
+
+            if let result = resultsByID[requestID] {
+                recordUsage(result.usage, apiKey: apiKey, persistChanges: false)
+                submission.setLatestSubmissionPayload(result.payload)
+                submission.setLatestValidationPayload(nil)
+                queueSubmissionForBatchStage(
+                    submission,
+                    stage: .validating,
+                    attempt: submission.currentBatchAttemptNumber + 1,
+                    detail: "Queued for validation pass \(submission.currentBatchAttemptNumber + 1)."
+                )
+            } else if let message = errorsByID[requestID] {
+                finalizeSubmissionWithValidationReview(
+                    submission,
+                    message: "Regrade batch could not finish automatically. \(message)"
+                )
+            } else {
+                finalizeSubmissionWithValidationReview(
+                    submission,
+                    message: "OpenAI completed the regrade batch but did not return a result for this submission."
+                )
+            }
+        }
+    }
+
+    private func fetchSubmissionBatchResults(
+        snapshot: OpenAIBatchStatusSnapshot,
+        modelID: String,
+        apiKey: String
+    ) async throws -> [OpenAIBatchSubmissionResult<SubmissionPayload>] {
+        guard let outputFileID = snapshot.outputFileID else { return [] }
+        return try await OpenAIService.shared.fetchSubmissionBatchResults(
+            apiKey: apiKey,
+            modelID: modelID,
+            outputFileID: outputFileID
         )
-        let draft = processed.draft.normalized(integerPointsOnly: session.integerPointsOnlyEnabled)
+    }
+
+    private func fetchAnswerKeyBatchResults(
+        snapshot: OpenAIBatchStatusSnapshot,
+        apiKey: String
+    ) async throws -> [OpenAIBatchSubmissionResult<MasterExamPayload>] {
+        guard let outputFileID = snapshot.outputFileID else { return [] }
+        return try await OpenAIService.shared.fetchAnswerKeyBatchResults(
+            apiKey: apiKey,
+            modelID: session.answerModelID,
+            outputFileID: outputFileID
+        )
+    }
+
+    private func fetchValidationBatchResults(
+        snapshot: OpenAIBatchStatusSnapshot,
+        modelID: String,
+        apiKey: String
+    ) async throws -> [OpenAIBatchSubmissionResult<GradingValidationPayload>] {
+        guard let outputFileID = snapshot.outputFileID else { return [] }
+        return try await OpenAIService.shared.fetchValidationBatchResults(
+            apiKey: apiKey,
+            modelID: modelID,
+            outputFileID: outputFileID
+        )
+    }
+
+    private func fetchBatchErrors(
+        snapshot: OpenAIBatchStatusSnapshot,
+        apiKey: String
+    ) async throws -> [OpenAIBatchSubmissionError] {
+        guard let errorFileID = snapshot.errorFileID else { return [] }
+        return try await OpenAIService.shared.fetchBatchErrors(
+            apiKey: apiKey,
+            errorFileID: errorFileID
+        )
+    }
+
+    private func submitQueuedBatchPipelineStages(apiKey: String) async throws {
+        try await submitQueuedValidationBatch(apiKey: apiKey)
+        try await submitQueuedRegradingBatch(apiKey: apiKey)
+    }
+
+    private func submitQueuedValidationBatch(apiKey: String) async throws {
+        let queued = session.submissions.filter {
+            $0.isProcessingPending && !$0.hasRemoteBatchInFlight && $0.batchStage == .validating
+        }
+        guard !queued.isEmpty else { return }
+
+        let inputs = queued.compactMap { submission -> OpenAIBatchValidationInput? in
+            guard
+                let pageFileURLs = ensureSubmissionScanFileURLs(for: submission),
+                let payload = submission.latestSubmissionPayload()
+            else {
+                finalizeSubmissionWithValidationReview(
+                    submission,
+                    message: "Validation batch could not be created because the saved grading payload or page scans were missing."
+                )
+                return nil
+            }
+            let requestID = "validate-\(submission.id.uuidString)-\(UUID().uuidString)"
+            submission.remoteBatchRequestID = requestID
+            return OpenAIBatchValidationInput(
+                customID: requestID,
+                pageFileURLs: pageFileURLs,
+                candidateGrading: payload
+            )
+        }
+        guard !inputs.isEmpty else { return }
+
+        let creation = try await OpenAIService.shared.createSubmissionValidationBatch(
+            apiKey: apiKey,
+            modelID: session.validationModelIDResolved,
+            rubric: session.sortedQuestions.map(\.snapshot),
+            overallRules: session.overallGradingRules,
+            submissions: inputs,
+            integerPointsOnly: session.integerPointsOnlyEnabled,
+            relaxedGradingMode: session.relaxedGradingModeEnabled,
+            reasoningEffort: session.validationReasoningEffort,
+            verbosity: session.validationVerbosity
+        )
+
+        for submission in queued where submission.remoteBatchRequestID != nil {
+            submission.remoteBatchID = creation.batchID
+            submission.processingDetail = "Validation pass \(submission.currentBatchAttemptNumber) batch submitted. \(detailTextForBatchStatus(status: creation.status, requestCounts: nil))"
+        }
+    }
+
+    private func submitQueuedRegradingBatch(apiKey: String) async throws {
+        let queued = session.submissions.filter {
+            $0.isProcessingPending && !$0.hasRemoteBatchInFlight && $0.batchStage == .regrading
+        }
+        guard !queued.isEmpty else { return }
+
+        let inputs = queued.compactMap { submission -> OpenAIBatchRegradeInput? in
+            guard
+                let pageFileURLs = ensureSubmissionScanFileURLs(for: submission),
+                let latestPayload = submission.latestSubmissionPayload(),
+                let validationPayload = submission.latestValidationPayload()
+            else {
+                finalizeSubmissionWithValidationReview(
+                    submission,
+                    message: "Regrade batch could not be created because the saved grading or validation context was missing."
+                )
+                return nil
+            }
+            let requestID = "regrade-\(submission.id.uuidString)-\(UUID().uuidString)"
+            submission.remoteBatchRequestID = requestID
+            return OpenAIBatchRegradeInput(
+                customID: requestID,
+                pageFileURLs: pageFileURLs,
+                previousGrading: latestPayload,
+                validatorFeedback: validationPayload
+            )
+        }
+        guard !inputs.isEmpty else { return }
+
+        let creation = try await OpenAIService.shared.createSubmissionRegradingBatch(
+            apiKey: apiKey,
+            modelID: session.gradingModelID,
+            rubric: session.sortedQuestions.map(\.snapshot),
+            overallRules: session.overallGradingRules,
+            submissions: inputs,
+            integerPointsOnly: session.integerPointsOnlyEnabled,
+            relaxedGradingMode: session.relaxedGradingModeEnabled,
+            reasoningEffort: session.gradingReasoningEffort,
+            verbosity: session.gradingVerbosity
+        )
+
+        for submission in queued where submission.remoteBatchRequestID != nil {
+            submission.remoteBatchID = creation.batchID
+            submission.processingDetail = "Regrade pass \(submission.currentBatchAttemptNumber) batch submitted. \(detailTextForBatchStatus(status: creation.status, requestCounts: nil))"
+        }
+    }
+
+    private func queueSubmissionForBatchStage(
+        _ submission: StudentSubmission,
+        stage: StudentSubmissionBatchStage,
+        attempt: Int,
+        detail: String
+    ) {
+        submission.processingStateRaw = StudentSubmissionProcessingState.pending.rawValue
+        submission.batchStageRaw = stage.rawValue
+        submission.batchAttemptNumber = attempt
+        submission.remoteBatchID = nil
+        submission.remoteBatchRequestID = nil
+        submission.processingDetail = detail
+    }
+
+    private func completeSubmission(
+        _ submission: StudentSubmission,
+        from payload: SubmissionPayload,
+        validationNeedsReview: Bool,
+        reviewMessage: String?
+    ) {
+        var draft = SubmissionDraft.from(
+            payload: payload,
+            rubricSnapshots: session.sortedQuestions.map(\.snapshot),
+            pageData: submission.scans(),
+            integerPointsOnly: session.integerPointsOnlyEnabled
+        )
+        .normalized(integerPointsOnly: session.integerPointsOnlyEnabled)
+
+        if validationNeedsReview {
+            draft.validationNeedsReview = true
+            draft.overallNotes = [
+                reviewMessage,
+                Optional(draft.overallNotes),
+            ]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
+        }
 
         submission.studentName = draft.studentName.trimmingCharacters(in: .whitespacesAndNewlines)
         submission.nameNeedsReview = draft.nameNeedsReview
@@ -1286,52 +2174,38 @@ struct SessionDetailView: View {
         submission.processingStateRaw = StudentSubmissionProcessingState.completed.rawValue
         submission.processingDetail = nil
         submission.setQuestionGrades(draft.grades)
-        for usage in processed.usageSummaries {
-            recordUsage(usage, apiKey: apiKey, persistChanges: false)
-        }
-        updateBusyPresentation(
-            title: "Finalizing batch results",
-            detail: "Validated submission \(submissionIndex) of \(totalSubmissions)",
-            progressLabel: "Validated \(submissionIndex) of \(totalSubmissions)",
-            progressValue: totalSubmissions == 0 ? nil : Double(submissionIndex) / Double(totalSubmissions)
-        )
+        submission.clearBatchPipelineState()
     }
 
-    private func applyBatchResultRequiringValidationReview(
-        _ result: OpenAIBatchSubmissionResult<SubmissionPayload>,
-        to submission: StudentSubmission,
-        message: String,
-        apiKey: String
+    private func finalizeSubmissionWithValidationReview(
+        _ submission: StudentSubmission,
+        message: String
     ) {
-        var draft = SubmissionDraft.from(
-            payload: result.payload,
-            rubricSnapshots: session.sortedQuestions.map(\.snapshot),
-            pageData: submission.scans(),
-            integerPointsOnly: session.integerPointsOnlyEnabled
-        )
-        .normalized(integerPointsOnly: session.integerPointsOnlyEnabled)
-        draft.validationNeedsReview = true
-        draft.overallNotes = [
-            message,
-            draft.overallNotes,
-        ]
-        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        .joined(separator: "\n\n")
+        if let payload = submission.latestSubmissionPayload() {
+            completeSubmission(
+                submission,
+                from: payload,
+                validationNeedsReview: true,
+                reviewMessage: message
+            )
+        } else {
+            markSubmissionFailed(submission, message: message)
+        }
+    }
 
-        submission.studentName = draft.studentName.trimmingCharacters(in: .whitespacesAndNewlines)
-        submission.nameNeedsReview = draft.nameNeedsReview
-        submission.validationNeedsReview = true
-        submission.overallNotes = draft.overallNotes.trimmingCharacters(in: .whitespacesAndNewlines)
-        submission.teacherReviewed = false
-        submission.processingStateRaw = StudentSubmissionProcessingState.completed.rawValue
-        submission.processingDetail = nil
-        submission.setQuestionGrades(draft.grades)
-        recordUsage(result.usage, apiKey: apiKey, persistChanges: false)
+    private func ensureSubmissionScanFileURLs(for submission: StudentSubmission) -> [URL]? {
+        if let existing = submission.scanFileURLs(), !existing.isEmpty {
+            return existing
+        }
+        let pages = submission.scans()
+        guard !pages.isEmpty else { return nil }
+        submission.setScans(pages)
+        return submission.scanFileURLs()
     }
 
     private func markBatchSubmissions(batchID: String, detail: String) {
         for submission in session.submissions where submission.isProcessingPending && submission.remoteBatchID == batchID {
-            submission.processingDetail = detail
+            submission.processingDetail = stagePrefixedDetail(for: submission, detail: detail)
         }
     }
 
@@ -1343,10 +2217,16 @@ struct SessionDetailView: View {
 
     private func markSubmissionFailed(_ submission: StudentSubmission, message: String) {
         submission.processingStateRaw = StudentSubmissionProcessingState.failed.rawValue
+        submission.batchStageRaw = nil
+        submission.batchAttemptNumber = nil
+        submission.remoteBatchID = nil
+        submission.remoteBatchRequestID = nil
         submission.processingDetail = message
         submission.overallNotes = message
         submission.teacherReviewed = false
         submission.validationNeedsReview = false
+        submission.setLatestSubmissionPayload(nil)
+        submission.setLatestValidationPayload(nil)
         submission.setQuestionGrades([])
         submission.totalScore = 0
         submission.maxScore = session.totalPossiblePoints
@@ -1368,7 +2248,7 @@ struct SessionDetailView: View {
         case "validating":
             return "OpenAI is validating the uploaded batch input.\(countSuffix)"
         case "in_progress":
-            return "OpenAI is grading the batch.\(countSuffix)"
+            return "OpenAI is processing the batch.\(countSuffix)"
         case "finalizing":
             return "OpenAI is preparing the batch output files.\(countSuffix)"
         case "completed":
@@ -1382,6 +2262,27 @@ struct SessionDetailView: View {
         default:
             return "Batch status: \(status).\(countSuffix)"
         }
+    }
+
+    private func stagePrefixedDetail(for submission: StudentSubmission, detail: String) -> String {
+        let prefix: String?
+        switch submission.batchStage {
+        case .queued:
+            prefix = "Queued until rubric approval."
+        case .grading:
+            prefix = "Initial grading."
+        case .validating:
+            prefix = "Validation pass \(submission.currentBatchAttemptNumber)."
+        case .regrading:
+            prefix = "Regrade pass \(submission.currentBatchAttemptNumber)."
+        case nil:
+            prefix = nil
+        }
+
+        return [prefix, detail]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 
     @MainActor
@@ -1486,7 +2387,8 @@ struct SessionDetailView: View {
                 gradingServiceTier: session.gradingServiceTier,
                 validationReasoningEffort: session.validationReasoningEffort,
                 validationVerbosity: session.validationVerbosity,
-                validationServiceTier: session.validationServiceTier
+                validationServiceTier: session.validationServiceTier,
+                validationMaxAttempts: session.validationMaxAttemptsResolved
             )
         )
     }
@@ -1518,6 +2420,22 @@ struct SessionDetailView: View {
         session.submissions.contains(where: \.isProcessingPending)
     }
 
+    private var hasQueuedBatchSubmissions: Bool {
+        session.submissions.contains(where: \.isQueuedForRubric)
+    }
+
+    private var hasRefreshablePendingBatchSubmissions: Bool {
+        session.submissions.contains(where: \.isAwaitingRemoteProcessing)
+    }
+
+    private var pendingRubricPollingID: String {
+        session.hasPendingRubricGeneration ? (session.rubricRemoteBatchID ?? "") : ""
+    }
+
+    private var hasActivePendingBatchRequests: Bool {
+        session.submissions.contains(where: \.hasRemoteBatchInFlight)
+    }
+
     private var filteredSubmissions: [StudentSubmission] {
         let trimmed = resultsSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let sortedSubmissions = session.sortedSubmissions
@@ -1529,7 +2447,7 @@ struct SessionDetailView: View {
 
     private var batchRefreshSummary: BatchRefreshSummary {
         BatchRefreshSummary(
-            pending: session.submissions.filter { $0.isProcessingPending }.count,
+            pending: session.submissions.filter { $0.isAwaitingRemoteProcessing }.count,
             completed: session.submissions.filter { $0.isProcessingCompleted }.count,
             failed: session.submissions.filter { $0.isProcessingFailed }.count
         )

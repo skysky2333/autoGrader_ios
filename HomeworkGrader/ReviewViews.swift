@@ -231,8 +231,14 @@ struct SubmissionDraftFormSections: View {
         }
 
         Section("Scores") {
-            LabeledContent("Total", value: "\(ScoreFormatting.scoreString(draft.totalScore)) / \(ScoreFormatting.scoreString(draft.maxScore))")
-                .font(.headline)
+            LabeledContent("Total") {
+                ScorePairText(
+                    awardedPoints: draft.totalScore,
+                    maxPoints: draft.maxScore
+                )
+                .foregroundStyle(scoreForegroundColor(awardedPoints: draft.totalScore, maxPoints: draft.maxScore))
+            }
+            .font(.headline)
             if integerPointsOnly {
                 Text("Integer-points mode is on. Awarded scores are restricted to whole numbers.")
                     .font(.footnote)
@@ -244,15 +250,24 @@ struct SubmissionDraftFormSections: View {
             Section {
                 if gradeNeedsHighlight(draft.grades[index]) {
                     HighlightNotice(
-                        message: draft.grades[index].needsReview
-                            ? "This answer needs human review."
-                            : "This answer is not full score.",
-                        color: draft.grades[index].needsReview ? .orange : .red
+                        message: "This answer needs human review.",
+                        color: .orange
                     )
                 }
 
                 Stepper(value: $draft.grades[index].awardedPoints, in: 0...draft.grades[index].maxPoints, step: PointPolicy.step(integerOnly: integerPointsOnly)) {
-                    LabeledContent("Awarded points", value: "\(ScoreFormatting.scoreString(draft.grades[index].awardedPoints)) / \(ScoreFormatting.scoreString(draft.grades[index].maxPoints))")
+                    LabeledContent("Awarded points") {
+                        ScorePairText(
+                            awardedPoints: draft.grades[index].awardedPoints,
+                            maxPoints: draft.grades[index].maxPoints
+                        )
+                        .foregroundStyle(
+                            scoreForegroundColor(
+                                awardedPoints: draft.grades[index].awardedPoints,
+                                maxPoints: draft.grades[index].maxPoints
+                            )
+                        )
+                    }
                 }
 
                 Toggle("Final answer correct", isOn: $draft.grades[index].isAnswerCorrect)
@@ -287,17 +302,20 @@ struct SubmissionReviewView: View {
     @State private var draft: SubmissionDraft
     @State private var isSaving = false
     let integerPointsOnly: Bool
+    let showsSaveAndScanNext: Bool
     let onSave: (SubmissionDraft) -> Void
     let onSaveAndScanNext: (SubmissionDraft) -> Void
 
     init(
         draft: SubmissionDraft,
         integerPointsOnly: Bool,
+        showsSaveAndScanNext: Bool = true,
         onSave: @escaping (SubmissionDraft) -> Void,
         onSaveAndScanNext: @escaping (SubmissionDraft) -> Void
     ) {
         _draft = State(initialValue: draft.normalized(integerPointsOnly: integerPointsOnly))
         self.integerPointsOnly = integerPointsOnly
+        self.showsSaveAndScanNext = showsSaveAndScanNext
         self.onSave = onSave
         self.onSaveAndScanNext = onSaveAndScanNext
     }
@@ -330,16 +348,18 @@ struct SubmissionReviewView: View {
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        beginSave(scanNext: true)
-                    } label: {
-                        if isSaving {
-                            ProgressView()
-                        } else {
-                            Text("Save & Scan Next")
+                    if showsSaveAndScanNext {
+                        Button {
+                            beginSave(scanNext: true)
+                        } label: {
+                            if isSaving {
+                                ProgressView()
+                            } else {
+                                Text("Save & Scan Next")
+                            }
                         }
+                        .disabled(!canSave || isSaving)
                     }
-                    .disabled(!canSave || isSaving)
                 }
             }
             .keyboardDismissToolbar()
@@ -484,13 +504,15 @@ struct SavedSubmissionDetailView: View {
     @EnvironmentObject private var feedbackCenter: FeedbackCenter
     let submission: StudentSubmission
     let integerPointsOnly: Bool
+    let onRegrade: (() -> Void)?
     @State private var draft: SubmissionDraft
     @State private var isSaving = false
 
-    init(submission: StudentSubmission) {
+    init(submission: StudentSubmission, onRegrade: (() -> Void)? = nil) {
         self.submission = submission
         let integerOnly = submission.session?.integerPointsOnlyEnabled ?? false
         self.integerPointsOnly = integerOnly
+        self.onRegrade = onRegrade
         _draft = State(initialValue: SubmissionDraft.fromStoredSubmission(submission).normalized(integerPointsOnly: integerOnly))
     }
 
@@ -515,7 +537,13 @@ struct SavedSubmissionDetailView: View {
                         )
                     }
                     LabeledContent("Saved", value: submission.createdAt.formatted(date: .abbreviated, time: .shortened))
-                    LabeledContent("Score", value: "\(ScoreFormatting.scoreString(draft.totalScore)) / \(ScoreFormatting.scoreString(draft.maxScore))")
+                    LabeledContent("Score") {
+                        ScorePairText(
+                            awardedPoints: draft.totalScore,
+                            maxPoints: draft.maxScore
+                        )
+                        .foregroundStyle(scoreForegroundColor(awardedPoints: draft.totalScore, maxPoints: draft.maxScore))
+                    }
                 }
 
                 if !draft.pageData.isEmpty {
@@ -528,15 +556,24 @@ struct SavedSubmissionDetailView: View {
                     Section {
                         if gradeNeedsHighlight(draft.grades[index]) {
                             HighlightNotice(
-                                message: draft.grades[index].needsReview
-                                    ? "This answer needs human review."
-                                    : "This answer is not full score.",
-                                color: draft.grades[index].needsReview ? .orange : .red
+                                message: "This answer needs human review.",
+                                color: .orange
                             )
                         }
 
                         Stepper(value: $draft.grades[index].awardedPoints, in: 0...draft.grades[index].maxPoints, step: PointPolicy.step(integerOnly: integerPointsOnly)) {
-                            LabeledContent("Awarded points", value: "\(ScoreFormatting.scoreString(draft.grades[index].awardedPoints)) / \(ScoreFormatting.scoreString(draft.grades[index].maxPoints))")
+                            LabeledContent("Awarded points") {
+                                ScorePairText(
+                                    awardedPoints: draft.grades[index].awardedPoints,
+                                    maxPoints: draft.grades[index].maxPoints
+                                )
+                                .foregroundStyle(
+                                    scoreForegroundColor(
+                                        awardedPoints: draft.grades[index].awardedPoints,
+                                        maxPoints: draft.grades[index].maxPoints
+                                    )
+                                )
+                            }
                         }
 
                         Toggle("Final answer correct", isOn: $draft.grades[index].isAnswerCorrect)
@@ -584,6 +621,14 @@ struct SavedSubmissionDetailView: View {
                         }
                     }
                     .disabled(draft.studentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    if let onRegrade {
+                        Button("Regrade") {
+                            onRegrade()
+                        }
+                    }
                 }
             }
             .keyboardDismissToolbar()

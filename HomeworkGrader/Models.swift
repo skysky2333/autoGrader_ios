@@ -266,8 +266,8 @@ enum ModelCatalog {
     ]
 
     static let defaultAnswerModel = "gpt-5.4"
-    static let defaultGradingModel = "gpt-5.4-mini"
-    static let defaultValidationModel = "gpt-5.4-mini"
+    static let defaultGradingModel = "gpt-5.4"
+    static let defaultValidationModel = "gpt-5.4"
 }
 
 struct APIRequestTuningOption: Identifiable, Hashable, Sendable {
@@ -313,6 +313,18 @@ enum StudentSubmissionProcessingState: String, Codable, Sendable {
     case failed
 }
 
+enum StudentSubmissionBatchStage: String, Codable, Sendable {
+    case queued
+    case grading
+    case validating
+    case regrading
+}
+
+enum RubricGenerationProcessingState: String, Codable, Sendable {
+    case pending
+    case failed
+}
+
 @Model
 final class GradingSession {
     @Attribute(.unique) var id: UUID
@@ -331,6 +343,7 @@ final class GradingSession {
     var answerServiceTier: String?
     var gradingServiceTier: String?
     var validationServiceTier: String?
+    var validationMaxAttempts: Int?
     var maxPagesPerSubmission: Int?
     var overallGradingRules: String?
     var relaxedGradingMode: Bool?
@@ -339,6 +352,11 @@ final class GradingSession {
     var integerPointsOnly: Bool?
     var isFinished: Bool
     var rubricApprovedAt: Date?
+    var rubricProcessingStateRaw: String?
+    var rubricProcessingDetail: String?
+    var rubricRemoteBatchID: String?
+    var rubricRemoteBatchRequestID: String?
+    @Attribute(.externalStorage) var pendingRubricPayloadArchive: Data?
     @Attribute(.externalStorage) var masterScanArchive: Data?
 
     @Relationship(deleteRule: .cascade, inverse: \QuestionRubric.session)
@@ -364,6 +382,7 @@ final class GradingSession {
         answerServiceTier: String? = nil,
         gradingServiceTier: String? = nil,
         validationServiceTier: String? = nil,
+        validationMaxAttempts: Int? = 2,
         maxPagesPerSubmission: Int? = nil,
         overallGradingRules: String? = nil,
         relaxedGradingMode: Bool = false,
@@ -372,6 +391,11 @@ final class GradingSession {
         integerPointsOnly: Bool = false,
         isFinished: Bool = false,
         rubricApprovedAt: Date? = nil,
+        rubricProcessingStateRaw: String? = nil,
+        rubricProcessingDetail: String? = nil,
+        rubricRemoteBatchID: String? = nil,
+        rubricRemoteBatchRequestID: String? = nil,
+        pendingRubricPayloadArchive: Data? = nil,
         masterScanArchive: Data? = nil
     ) {
         self.id = id
@@ -390,6 +414,7 @@ final class GradingSession {
         self.answerServiceTier = answerServiceTier
         self.gradingServiceTier = gradingServiceTier
         self.validationServiceTier = validationServiceTier
+        self.validationMaxAttempts = validationMaxAttempts
         self.maxPagesPerSubmission = maxPagesPerSubmission
         self.overallGradingRules = overallGradingRules
         self.relaxedGradingMode = relaxedGradingMode
@@ -398,6 +423,11 @@ final class GradingSession {
         self.integerPointsOnly = integerPointsOnly
         self.isFinished = isFinished
         self.rubricApprovedAt = rubricApprovedAt
+        self.rubricProcessingStateRaw = rubricProcessingStateRaw
+        self.rubricProcessingDetail = rubricProcessingDetail
+        self.rubricRemoteBatchID = rubricRemoteBatchID
+        self.rubricRemoteBatchRequestID = rubricRemoteBatchRequestID
+        self.pendingRubricPayloadArchive = pendingRubricPayloadArchive
         self.masterScanArchive = masterScanArchive
         self.questions = []
         self.submissions = []
@@ -451,12 +481,16 @@ final class StudentSubmission {
     var totalScore: Double
     var maxScore: Double
     var processingStateRaw: String?
+    var batchStageRaw: String?
+    var batchAttemptNumber: Int?
     var processingDetail: String?
     var remoteBatchID: String?
     var remoteBatchRequestID: String?
     var session: GradingSession?
     @Attribute(.externalStorage) var scanArchive: Data?
     @Attribute(.externalStorage) var gradeArchive: Data?
+    @Attribute(.externalStorage) var latestSubmissionPayloadArchive: Data?
+    @Attribute(.externalStorage) var latestValidationPayloadArchive: Data?
 
     init(
         id: UUID = UUID(),
@@ -469,12 +503,16 @@ final class StudentSubmission {
         totalScore: Double,
         maxScore: Double,
         processingStateRaw: String? = nil,
+        batchStageRaw: String? = nil,
+        batchAttemptNumber: Int? = nil,
         processingDetail: String? = nil,
         remoteBatchID: String? = nil,
         remoteBatchRequestID: String? = nil,
         session: GradingSession? = nil,
         scanArchive: Data? = nil,
-        gradeArchive: Data? = nil
+        gradeArchive: Data? = nil,
+        latestSubmissionPayloadArchive: Data? = nil,
+        latestValidationPayloadArchive: Data? = nil
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -486,17 +524,28 @@ final class StudentSubmission {
         self.totalScore = totalScore
         self.maxScore = maxScore
         self.processingStateRaw = processingStateRaw
+        self.batchStageRaw = batchStageRaw
+        self.batchAttemptNumber = batchAttemptNumber
         self.processingDetail = processingDetail
         self.remoteBatchID = remoteBatchID
         self.remoteBatchRequestID = remoteBatchRequestID
         self.session = session
         self.scanArchive = scanArchive
         self.gradeArchive = gradeArchive
+        self.latestSubmissionPayloadArchive = latestSubmissionPayloadArchive
+        self.latestValidationPayloadArchive = latestValidationPayloadArchive
     }
 }
 
 extension GradingSession {
     private static let persistedPageNamespace = "session-master-scans"
+
+    var rubricProcessingState: RubricGenerationProcessingState? {
+        guard let raw = rubricProcessingStateRaw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
+        }
+        return RubricGenerationProcessingState(rawValue: raw)
+    }
 
     var validationEnabledResolved: Bool {
         validationEnabled ?? true
@@ -517,6 +566,14 @@ extension GradingSession {
 
     var validationModelLabel: String {
         validationEnabledResolved ? validationModelIDResolved : "Disabled"
+    }
+
+    var validationMaxAttemptsResolved: Int {
+        max(validationMaxAttempts ?? 2, 1)
+    }
+
+    var validationMaxAttemptsLabel: String {
+        "\(validationMaxAttemptsResolved)"
     }
 
     var sortedQuestions: [QuestionRubric] {
@@ -545,6 +602,19 @@ extension GradingSession {
 
     var sessionCostLabel: String {
         CostFormatting.usdString(estimatedCostUSD)
+    }
+
+    var hasPendingRubricGeneration: Bool {
+        rubricProcessingState == .pending &&
+        !(rubricRemoteBatchID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
+    var hasFailedRubricGeneration: Bool {
+        rubricProcessingState == .failed
+    }
+
+    var hasPendingRubricReview: Bool {
+        pendingRubricPayload() != nil
     }
 
     var maxPagesLabel: String {
@@ -644,6 +714,36 @@ extension GradingSession {
         let archive = try JSONEncoder().encode(StoredPageArchive(filePaths: persistedFileURLs.map(\.path)))
         return (archive, persistedFileURLs)
     }
+
+    func markRubricGenerationPending(batchID: String, requestID: String, detail: String) {
+        rubricProcessingStateRaw = RubricGenerationProcessingState.pending.rawValue
+        rubricProcessingDetail = detail
+        rubricRemoteBatchID = batchID
+        rubricRemoteBatchRequestID = requestID
+    }
+
+    func markRubricGenerationFailed(message: String) {
+        rubricProcessingStateRaw = RubricGenerationProcessingState.failed.rawValue
+        rubricProcessingDetail = message
+        rubricRemoteBatchID = nil
+        rubricRemoteBatchRequestID = nil
+    }
+
+    func clearRubricGenerationState() {
+        rubricProcessingStateRaw = nil
+        rubricProcessingDetail = nil
+        rubricRemoteBatchID = nil
+        rubricRemoteBatchRequestID = nil
+    }
+
+    func pendingRubricPayload() -> MasterExamPayload? {
+        guard let pendingRubricPayloadArchive else { return nil }
+        return try? JSONDecoder().decode(MasterExamPayload.self, from: pendingRubricPayloadArchive)
+    }
+
+    func setPendingRubricPayload(_ payload: MasterExamPayload?) {
+        pendingRubricPayloadArchive = payload.flatMap { try? JSONEncoder().encode($0) }
+    }
 }
 
 extension StudentSubmission {
@@ -652,6 +752,25 @@ extension StudentSubmission {
 
     var processingState: StudentSubmissionProcessingState {
         StudentSubmissionProcessingState(rawValue: processingStateRaw ?? "") ?? .completed
+    }
+
+    var batchStage: StudentSubmissionBatchStage? {
+        guard let raw = batchStageRaw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
+        }
+        return StudentSubmissionBatchStage(rawValue: raw)
+    }
+
+    var currentBatchAttemptNumber: Int {
+        max(batchAttemptNumber ?? 1, 1)
+    }
+
+    var isQueuedForRubric: Bool {
+        isProcessingPending && batchStage == .queued
+    }
+
+    var isAwaitingRemoteProcessing: Bool {
+        isProcessingPending && batchStage != .queued
     }
 
     var isProcessingPending: Bool {
@@ -681,6 +800,10 @@ extension StudentSubmission {
 
     var hasQuestionNeedingReview: Bool {
         ArchiveDecodeCache.gradeNeedsReview(ownerID: id, archive: gradeArchive)
+    }
+
+    var hasRemoteBatchInFlight: Bool {
+        isProcessingPending && !(remoteBatchID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
     }
 
     func scans() -> [Data] {
@@ -731,6 +854,33 @@ extension StudentSubmission {
         }
         totalScore = grades.reduce(0) { $0 + $1.awardedPoints }
         maxScore = grades.reduce(0) { $0 + $1.maxPoints }
+    }
+
+    func latestSubmissionPayload() -> SubmissionPayload? {
+        guard let latestSubmissionPayloadArchive else { return nil }
+        return try? JSONDecoder().decode(SubmissionPayload.self, from: latestSubmissionPayloadArchive)
+    }
+
+    func setLatestSubmissionPayload(_ payload: SubmissionPayload?) {
+        latestSubmissionPayloadArchive = payload.flatMap { try? JSONEncoder().encode($0) }
+    }
+
+    func latestValidationPayload() -> GradingValidationPayload? {
+        guard let latestValidationPayloadArchive else { return nil }
+        return try? JSONDecoder().decode(GradingValidationPayload.self, from: latestValidationPayloadArchive)
+    }
+
+    func setLatestValidationPayload(_ payload: GradingValidationPayload?) {
+        latestValidationPayloadArchive = payload.flatMap { try? JSONEncoder().encode($0) }
+    }
+
+    func clearBatchPipelineState() {
+        batchStageRaw = nil
+        batchAttemptNumber = nil
+        remoteBatchID = nil
+        remoteBatchRequestID = nil
+        latestSubmissionPayloadArchive = nil
+        latestValidationPayloadArchive = nil
     }
 
     private func archiveForPersistedPages(_ pages: [Data]) throws -> (archive: Data, fileURLs: [URL]) {

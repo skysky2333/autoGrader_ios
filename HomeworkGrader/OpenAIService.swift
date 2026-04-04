@@ -75,6 +75,24 @@ struct OpenAIBatchSubmissionInput: Sendable {
     let pageFileURLs: [URL]
 }
 
+struct OpenAIBatchAnswerKeyInput: Sendable {
+    let customID: String
+    let pageFileURLs: [URL]
+}
+
+struct OpenAIBatchValidationInput: Sendable {
+    let customID: String
+    let pageFileURLs: [URL]
+    let candidateGrading: SubmissionPayload
+}
+
+struct OpenAIBatchRegradeInput: Sendable {
+    let customID: String
+    let pageFileURLs: [URL]
+    let previousGrading: SubmissionPayload
+    let validatorFeedback: GradingValidationPayload
+}
+
 struct OpenAIBatchCreationResult: Sendable {
     let batchID: String
     let status: String
@@ -160,69 +178,15 @@ final class OpenAIService: @unchecked Sendable {
         serviceTier: String?,
         streamHandler: (@Sendable (OpenAIStreamEvent) async -> Void)? = nil
     ) async throws -> OpenAIResult<MasterExamPayload> {
-        let schema: [String: Any] = [
-            "type": "object",
-            "additionalProperties": false,
-            "properties": [
-                "assignment_title": ["type": "string"],
-                "questions": [
-                    "type": "array",
-                    "items": [
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": [
-                            "question_id": ["type": "string"],
-                            "display_label": ["type": "string"],
-                            "prompt_text": ["type": "string"],
-                            "ideal_answer": ["type": "string"],
-                            "grading_criteria": ["type": "string"],
-                            "page_references": [
-                                "type": "array",
-                                "items": ["type": "integer"],
-                            ],
-                        ],
-                        "required": [
-                            "question_id",
-                            "display_label",
-                            "prompt_text",
-                            "ideal_answer",
-                            "grading_criteria",
-                            "page_references",
-                        ],
-                    ],
-                ],
-            ],
-            "required": ["assignment_title", "questions"],
-        ]
-
-        let systemPrompt = """
-        You are an expert teacher assistant.
-        Analyze images of a blank assignment or exam and produce a teacher-reviewable answer key.
-        Identify every distinct question in reading order across all pages.
-        For each question, extract a concise prompt, write a detailed ideal answer or worked solution, and list grading criteria that a teacher can use later.
-        Do not score questions. The teacher will set points manually.
-        If parts of a page are unclear, still provide your best structured extraction and mention uncertainty inside grading_criteria.
-        In prompt_text, ideal_answer, and grading_criteria:
-        - keep normal prose as plain text
-        - wrap every mathematical expression in $...$ or $$...$$
-        - use only valid standard LaTeX inside those delimiters
-        - never use single-dollar math delimiters
-        - if you are unsure how to write an expression in LaTeX, use plain text instead of broken LaTeX
-        """
-
-        let userText = """
-        Session title: \(sessionTitle)
-        The attached pages are blank assignment pages in page order starting at page 1.
-        Return one question object per gradeable question.
-        """
+        let definition = try makeAnswerKeyDefinition(sessionTitle: sessionTitle)
 
         return try await performStructuredRequest(
             apiKey: apiKey,
             modelID: modelID,
-            schemaName: "master_answer_key",
-            schema: schema,
-            systemPrompt: systemPrompt,
-            userText: userText,
+            schemaName: definition.schemaName,
+            schema: definition.schema,
+            systemPrompt: definition.systemPrompt,
+            userText: definition.userText,
             images: pageData,
             reasoningEffort: reasoningEffort,
             verbosity: verbosity,
@@ -284,65 +248,21 @@ final class OpenAIService: @unchecked Sendable {
         serviceTier: String?,
         streamHandler: (@Sendable (OpenAIStreamEvent) async -> Void)? = nil
     ) async throws -> OpenAIResult<GradingValidationPayload> {
-        let rubricString = String(decoding: try JSONEncoder.prettyPrinted.encode(rubric), as: UTF8.self)
-        let candidateString = String(decoding: try JSONEncoder.prettyPrinted.encode(candidateGrading), as: UTF8.self)
-
-        let schema: [String: Any] = [
-            "type": "object",
-            "additionalProperties": false,
-            "properties": [
-                "is_grading_correct": ["type": "boolean"],
-                "validator_summary": ["type": "string"],
-                "issues": [
-                    "type": "array",
-                    "items": ["type": "string"],
-                ],
-            ],
-            "required": ["is_grading_correct", "validator_summary", "issues"],
-        ]
-
-        let systemPrompt = """
-        You are validating a grading decision for a student's submission.
-        Review the student work from the attached images, the rubric, the session-wide grading rules, and the candidate grading JSON.
-        Return is_grading_correct=true only if the candidate grading is correct.
-        Return false if any awarded points, correctness flags, process judgment, or review flags should change.
-        Be critical of OCR or reading mistakes. Check carefully for text mismatches, symbol mismatches, copied-answer mismatches, and especially student-name mismatches.
-        For the student name, verify character by character.
-        If the candidate name seems plausible but one or more characters are uncertain, student_name_needs_review should be true.
-        Do not fail validation only because the name is uncertain if the candidate grading correctly marks the name for human review.
-        Fail validation if the name appears materially wrong, or if the name is uncertain but the candidate grading failed to flag student_name_needs_review.
-        Also check for mathematically equivalent answer forms that should still receive credit. Do not mark a grading wrong only because the student's answer is written in a different but equivalent form.
-        Keep validator_summary concise and actionable so it can be used to regrade the submission if needed.
-        In validator_summary and issues:
-        - keep normal prose as plain text
-        - wrap every mathematical expression in $...$ or $$...$$
-        - use only valid standard LaTeX inside those delimiters
-        - never use single-dollar math delimiters
-        - if you are unsure how to write an expression in LaTeX, use plain text instead of broken LaTeX
-        \(relaxedGradingMode ? "Relaxed grading mode is ON. A correct final answer should receive full credit even if intermediate work is minimal, omitted, or imperfect, unless the rubric explicitly requires process-based scoring." : "")
-        \(integerPointsOnly ? "Scores must remain whole numbers." : "Fractional scores are allowed when justified by the rubric.")
-        """
-
-        let userText = """
-        Validate the candidate grading below.
-
-        SESSION-WIDE GRADING RULES:
-        \(overallRules?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? overallRules! : "None provided.")
-
-        RUBRIC JSON:
-        \(rubricString)
-
-        CANDIDATE GRADING JSON:
-        \(candidateString)
-        """
+        let definition = try makeSubmissionValidationDefinition(
+            rubric: rubric,
+            overallRules: overallRules,
+            candidateGrading: candidateGrading,
+            integerPointsOnly: integerPointsOnly,
+            relaxedGradingMode: relaxedGradingMode
+        )
 
         return try await performStructuredRequest(
             apiKey: apiKey,
             modelID: modelID,
-            schemaName: "grading_validation",
-            schema: schema,
-            systemPrompt: systemPrompt,
-            userText: userText,
+            schemaName: definition.schemaName,
+            schema: definition.schema,
+            systemPrompt: definition.systemPrompt,
+            userText: definition.userText,
             images: pageData,
             reasoningEffort: reasoningEffort,
             verbosity: verbosity,
@@ -381,36 +301,140 @@ final class OpenAIService: @unchecked Sendable {
             reasoningEffort: reasoningEffort,
             verbosity: verbosity
         )
-        defer { try? FileManager.default.removeItem(at: jsonlFileURL) }
-
-        let fileID = try await uploadBatchInputFile(
+        return try await createStructuredBatch(
             apiKey: trimmedKey,
-            fileURL: jsonlFileURL,
-            filename: "homework-grader-\(UUID().uuidString).jsonl"
+            jsonlFileURL: jsonlFileURL,
+            filenamePrefix: "homework-grader"
         )
+    }
 
-        var request = URLRequest(url: batchesEndpoint)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 180
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(trimmedKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONSerialization.data(
-            withJSONObject: [
-                "input_file_id": fileID,
-                "endpoint": "/v1/responses",
-                "completion_window": "24h",
-            ],
-            options: []
+    func createAnswerKeyBatch(
+        apiKey: String,
+        modelID: String,
+        sessionTitle: String,
+        submissions: [OpenAIBatchAnswerKeyInput],
+        reasoningEffort: String?,
+        verbosity: String?
+    ) async throws -> OpenAIBatchCreationResult {
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKey.isEmpty else { throw OpenAIServiceError.missingAPIKey }
+
+        let jsonlFileURL = try makeAnswerKeyBatchJSONLFile(
+            submissions: submissions,
+            modelID: modelID,
+            sessionTitle: sessionTitle,
+            reasoningEffort: reasoningEffort,
+            verbosity: verbosity
         )
-
-        let (data, response) = try await session.data(for: request)
-        let payload = try decodeHTTPPayload(data: data, response: response)
-        let batch = try JSONDecoder().decode(OpenAIBatchObject.self, from: payload)
-
-        return OpenAIBatchCreationResult(
-            batchID: batch.id,
-            status: batch.status
+        return try await createStructuredBatch(
+            apiKey: trimmedKey,
+            jsonlFileURL: jsonlFileURL,
+            filenamePrefix: "hgrader-answer-key"
         )
+    }
+
+    func createSubmissionValidationBatch(
+        apiKey: String,
+        modelID: String,
+        rubric: [RubricSnapshot],
+        overallRules: String?,
+        submissions: [OpenAIBatchValidationInput],
+        integerPointsOnly: Bool,
+        relaxedGradingMode: Bool,
+        reasoningEffort: String?,
+        verbosity: String?
+    ) async throws -> OpenAIBatchCreationResult {
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKey.isEmpty else { throw OpenAIServiceError.missingAPIKey }
+
+        let jsonlFileURL = try makeSubmissionValidationBatchJSONLFile(
+            submissions: submissions,
+            modelID: modelID,
+            rubric: rubric,
+            overallRules: overallRules,
+            integerPointsOnly: integerPointsOnly,
+            relaxedGradingMode: relaxedGradingMode,
+            reasoningEffort: reasoningEffort,
+            verbosity: verbosity
+        )
+        return try await createStructuredBatch(
+            apiKey: trimmedKey,
+            jsonlFileURL: jsonlFileURL,
+            filenamePrefix: "hgrader-validation"
+        )
+    }
+
+    func createSubmissionRegradingBatch(
+        apiKey: String,
+        modelID: String,
+        rubric: [RubricSnapshot],
+        overallRules: String?,
+        submissions: [OpenAIBatchRegradeInput],
+        integerPointsOnly: Bool,
+        relaxedGradingMode: Bool,
+        reasoningEffort: String?,
+        verbosity: String?
+    ) async throws -> OpenAIBatchCreationResult {
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKey.isEmpty else { throw OpenAIServiceError.missingAPIKey }
+
+        let jsonlFileURL = try makeSubmissionRegradingBatchJSONLFile(
+            submissions: submissions,
+            modelID: modelID,
+            rubric: rubric,
+            overallRules: overallRules,
+            integerPointsOnly: integerPointsOnly,
+            relaxedGradingMode: relaxedGradingMode,
+            reasoningEffort: reasoningEffort,
+            verbosity: verbosity
+        )
+        return try await createStructuredBatch(
+            apiKey: trimmedKey,
+            jsonlFileURL: jsonlFileURL,
+            filenamePrefix: "hgrader-regrade"
+        )
+    }
+
+    func fetchValidationBatchResults(
+        apiKey: String,
+        modelID: String,
+        outputFileID: String
+    ) async throws -> [OpenAIBatchSubmissionResult<GradingValidationPayload>] {
+        let objects = try await fetchJSONLLines(apiKey: apiKey, fileID: outputFileID)
+        return try objects.map { object in
+            guard let customID = object["custom_id"] as? String else {
+                throw OpenAIServiceError.invalidResponse("Batch output is missing a custom_id.")
+            }
+
+            if let errorMessage = batchErrorMessage(from: object) {
+                throw OpenAIServiceError.invalidResponse("Batch output returned an error for \(customID): \(errorMessage)")
+            }
+
+            guard
+                let response = object["response"] as? [String: Any],
+                let body = response["body"] as? [String: Any]
+            else {
+                throw OpenAIServiceError.invalidResponse("Batch output did not include a response body for \(customID).")
+            }
+
+            let outputText = try extractOutputText(from: body)
+            let payloadData = Data(outputText.utf8)
+            let payload = try JSONDecoder().decode(GradingValidationPayload.self, from: payloadData)
+            let usage = extractUsage(from: body, modelID: modelID).map {
+                OpenAIUsageSummary(
+                    inputTokens: $0.inputTokens,
+                    outputTokens: $0.outputTokens,
+                    cachedInputTokens: $0.cachedInputTokens,
+                    estimatedCostUSD: $0.estimatedCostUSD * 0.5
+                )
+            }
+
+            return OpenAIBatchSubmissionResult(
+                customID: customID,
+                payload: payload,
+                usage: usage
+            )
+        }
     }
 
     func fetchBatchStatus(apiKey: String, batchID: String) async throws -> OpenAIBatchStatusSnapshot {
@@ -470,6 +494,48 @@ final class OpenAIService: @unchecked Sendable {
             let outputText = try extractOutputText(from: body)
             let payloadData = Data(outputText.utf8)
             let payload = try JSONDecoder().decode(SubmissionPayload.self, from: payloadData)
+            let usage = extractUsage(from: body, modelID: modelID).map {
+                OpenAIUsageSummary(
+                    inputTokens: $0.inputTokens,
+                    outputTokens: $0.outputTokens,
+                    cachedInputTokens: $0.cachedInputTokens,
+                    estimatedCostUSD: $0.estimatedCostUSD * 0.5
+                )
+            }
+
+            return OpenAIBatchSubmissionResult(
+                customID: customID,
+                payload: payload,
+                usage: usage
+            )
+        }
+    }
+
+    func fetchAnswerKeyBatchResults(
+        apiKey: String,
+        modelID: String,
+        outputFileID: String
+    ) async throws -> [OpenAIBatchSubmissionResult<MasterExamPayload>] {
+        let objects = try await fetchJSONLLines(apiKey: apiKey, fileID: outputFileID)
+        return try objects.map { object in
+            guard let customID = object["custom_id"] as? String else {
+                throw OpenAIServiceError.invalidResponse("Batch output is missing a custom_id.")
+            }
+
+            if let errorMessage = batchErrorMessage(from: object) {
+                throw OpenAIServiceError.invalidResponse("Batch output returned an error for \(customID): \(errorMessage)")
+            }
+
+            guard
+                let response = object["response"] as? [String: Any],
+                let body = response["body"] as? [String: Any]
+            else {
+                throw OpenAIServiceError.invalidResponse("Batch output did not include a response body for \(customID).")
+            }
+
+            let outputText = try extractOutputText(from: body)
+            let payloadData = Data(outputText.utf8)
+            let payload = try JSONDecoder().decode(MasterExamPayload.self, from: payloadData)
             let usage = extractUsage(from: body, modelID: modelID).map {
                 OpenAIUsageSummary(
                     inputTokens: $0.inputTokens,
@@ -651,6 +717,73 @@ final class OpenAIService: @unchecked Sendable {
 
         return StructuredResponseDefinition(
             schemaName: "graded_submission",
+            schema: schema,
+            systemPrompt: systemPrompt,
+            userText: userText
+        )
+    }
+
+    private func makeSubmissionValidationDefinition(
+        rubric: [RubricSnapshot],
+        overallRules: String?,
+        candidateGrading: SubmissionPayload,
+        integerPointsOnly: Bool,
+        relaxedGradingMode: Bool
+    ) throws -> StructuredResponseDefinition {
+        let rubricString = String(decoding: try JSONEncoder.prettyPrinted.encode(rubric), as: UTF8.self)
+        let candidateString = String(decoding: try JSONEncoder.prettyPrinted.encode(candidateGrading), as: UTF8.self)
+
+        let schema: [String: Any] = [
+            "type": "object",
+            "additionalProperties": false,
+            "properties": [
+                "is_grading_correct": ["type": "boolean"],
+                "validator_summary": ["type": "string"],
+                "issues": [
+                    "type": "array",
+                    "items": ["type": "string"],
+                ],
+            ],
+            "required": ["is_grading_correct", "validator_summary", "issues"],
+        ]
+
+        let systemPrompt = """
+        You are validating a grading decision for a student's submission.
+        Review the student work from the attached images, the rubric, the session-wide grading rules, and the candidate grading JSON.
+        Return is_grading_correct=true only if the candidate grading is correct.
+        Return false if any awarded points, correctness flags, process judgment, or review flags should change.
+        Be critical of OCR or reading mistakes. Check carefully for text mismatches, symbol mismatches, copied-answer mismatches, and especially student-name mismatches.
+        For the student name, verify character by character.
+        If the candidate name seems plausible but one or more characters are uncertain, student_name_needs_review should be true.
+        Do not fail validation only because the name is uncertain if the candidate grading correctly marks the name for human review.
+        Fail validation if the name appears materially wrong, or if the name is uncertain but the candidate grading failed to flag student_name_needs_review.
+        Also check for mathematically equivalent answer forms that should still receive credit. Do not mark a grading wrong only because the student's answer is written in a different but equivalent form.
+        Keep validator_summary concise and actionable so it can be used to regrade the submission if needed.
+        In validator_summary and issues:
+        - keep normal prose as plain text
+        - wrap every mathematical expression in $...$ or $$...$$
+        - use only valid standard LaTeX inside those delimiters
+        - never use single-dollar math delimiters
+        - if you are unsure how to write an expression in LaTeX, use plain text instead of broken LaTeX
+        \(relaxedGradingMode ? "Relaxed grading mode is ON. A correct final answer should receive full credit even if intermediate work is minimal, omitted, or imperfect, unless the rubric explicitly requires process-based scoring." : "")
+        \(integerPointsOnly ? "Scores must remain whole numbers." : "Fractional scores are allowed when justified by the rubric.")
+        """
+
+        let userText = """
+        Validate the candidate grading below.
+
+        SESSION-WIDE GRADING RULES:
+        \(overallRules?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? overallRules! : "None provided.")
+
+        RUBRIC JSON:
+        \(rubricString)
+
+        CANDIDATE GRADING JSON:
+        \(candidateString)
+        """
+
+        return StructuredResponseDefinition(
+            schemaName: "grading_validation",
             schema: schema,
             systemPrompt: systemPrompt,
             userText: userText
@@ -964,6 +1097,198 @@ final class OpenAIService: @unchecked Sendable {
         return fileURL
     }
 
+    private func makeAnswerKeyBatchJSONLFile(
+        submissions: [OpenAIBatchAnswerKeyInput],
+        modelID: String,
+        sessionTitle: String,
+        reasoningEffort: String?,
+        verbosity: String?
+    ) throws -> URL {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HGraderAnswerKeyBatch-\(UUID().uuidString).jsonl")
+        FileManager.default.createFile(atPath: fileURL.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: fileURL)
+        defer { try? handle.close() }
+
+        let definition = try makeAnswerKeyDefinition(sessionTitle: sessionTitle)
+
+        for submission in submissions {
+            let body = try autoreleasepool {
+                try makeStructuredRequestBody(
+                    modelID: modelID,
+                    schemaName: definition.schemaName,
+                    schema: definition.schema,
+                    systemPrompt: definition.systemPrompt,
+                    userText: definition.userText,
+                    imageFileURLs: submission.pageFileURLs,
+                    reasoningEffort: reasoningEffort,
+                    verbosity: verbosity,
+                    serviceTier: nil,
+                    stream: false
+                )
+            }
+
+            let lineObject: [String: Any] = [
+                "custom_id": submission.customID,
+                "method": "POST",
+                "url": "/v1/responses",
+                "body": body,
+            ]
+
+            let data = try JSONSerialization.data(withJSONObject: lineObject, options: [])
+            try handle.write(contentsOf: data)
+            try handle.write(contentsOf: Data("\n".utf8))
+        }
+
+        return fileURL
+    }
+
+    private func makeSubmissionValidationBatchJSONLFile(
+        submissions: [OpenAIBatchValidationInput],
+        modelID: String,
+        rubric: [RubricSnapshot],
+        overallRules: String?,
+        integerPointsOnly: Bool,
+        relaxedGradingMode: Bool,
+        reasoningEffort: String?,
+        verbosity: String?
+    ) throws -> URL {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HGraderValidationBatch-\(UUID().uuidString).jsonl")
+        FileManager.default.createFile(atPath: fileURL.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: fileURL)
+        defer { try? handle.close() }
+
+        for submission in submissions {
+            let definition = try makeSubmissionValidationDefinition(
+                rubric: rubric,
+                overallRules: overallRules,
+                candidateGrading: submission.candidateGrading,
+                integerPointsOnly: integerPointsOnly,
+                relaxedGradingMode: relaxedGradingMode
+            )
+            let body = try autoreleasepool {
+                try makeStructuredRequestBody(
+                    modelID: modelID,
+                    schemaName: definition.schemaName,
+                    schema: definition.schema,
+                    systemPrompt: definition.systemPrompt,
+                    userText: definition.userText,
+                    imageFileURLs: submission.pageFileURLs,
+                    reasoningEffort: reasoningEffort,
+                    verbosity: verbosity,
+                    serviceTier: nil,
+                    stream: false
+                )
+            }
+
+            let lineObject: [String: Any] = [
+                "custom_id": submission.customID,
+                "method": "POST",
+                "url": "/v1/responses",
+                "body": body,
+            ]
+
+            let data = try JSONSerialization.data(withJSONObject: lineObject, options: [])
+            try handle.write(contentsOf: data)
+            try handle.write(contentsOf: Data("\n".utf8))
+        }
+
+        return fileURL
+    }
+
+    private func makeSubmissionRegradingBatchJSONLFile(
+        submissions: [OpenAIBatchRegradeInput],
+        modelID: String,
+        rubric: [RubricSnapshot],
+        overallRules: String?,
+        integerPointsOnly: Bool,
+        relaxedGradingMode: Bool,
+        reasoningEffort: String?,
+        verbosity: String?
+    ) throws -> URL {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HGraderRegradeBatch-\(UUID().uuidString).jsonl")
+        FileManager.default.createFile(atPath: fileURL.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: fileURL)
+        defer { try? handle.close() }
+
+        for submission in submissions {
+            let definition = try makeSubmissionGradeDefinition(
+                rubric: rubric,
+                overallRules: overallRules,
+                integerPointsOnly: integerPointsOnly,
+                relaxedGradingMode: relaxedGradingMode,
+                previousGrading: submission.previousGrading,
+                validatorFeedback: submission.validatorFeedback
+            )
+            let body = try autoreleasepool {
+                try makeStructuredRequestBody(
+                    modelID: modelID,
+                    schemaName: definition.schemaName,
+                    schema: definition.schema,
+                    systemPrompt: definition.systemPrompt,
+                    userText: definition.userText,
+                    imageFileURLs: submission.pageFileURLs,
+                    reasoningEffort: reasoningEffort,
+                    verbosity: verbosity,
+                    serviceTier: nil,
+                    stream: false
+                )
+            }
+
+            let lineObject: [String: Any] = [
+                "custom_id": submission.customID,
+                "method": "POST",
+                "url": "/v1/responses",
+                "body": body,
+            ]
+
+            let data = try JSONSerialization.data(withJSONObject: lineObject, options: [])
+            try handle.write(contentsOf: data)
+            try handle.write(contentsOf: Data("\n".utf8))
+        }
+
+        return fileURL
+    }
+
+    private func createStructuredBatch(
+        apiKey: String,
+        jsonlFileURL: URL,
+        filenamePrefix: String
+    ) async throws -> OpenAIBatchCreationResult {
+        defer { try? FileManager.default.removeItem(at: jsonlFileURL) }
+
+        let fileID = try await uploadBatchInputFile(
+            apiKey: apiKey,
+            fileURL: jsonlFileURL,
+            filename: "\(filenamePrefix)-\(UUID().uuidString).jsonl"
+        )
+
+        var request = URLRequest(url: batchesEndpoint)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 180
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONSerialization.data(
+            withJSONObject: [
+                "input_file_id": fileID,
+                "endpoint": "/v1/responses",
+                "completion_window": "24h",
+            ],
+            options: []
+        )
+
+        let (data, response) = try await session.data(for: request)
+        let payload = try decodeHTTPPayload(data: data, response: response)
+        let batch = try JSONDecoder().decode(OpenAIBatchObject.self, from: payload)
+
+        return OpenAIBatchCreationResult(
+            batchID: batch.id,
+            status: batch.status
+        )
+    }
+
     private func uploadBatchInputFile(
         apiKey: String,
         fileURL: URL,
@@ -1082,6 +1407,71 @@ final class OpenAIService: @unchecked Sendable {
         }
 
         return nil
+    }
+
+    private func makeAnswerKeyDefinition(sessionTitle: String) throws -> StructuredResponseDefinition {
+        let schema: [String: Any] = [
+            "type": "object",
+            "additionalProperties": false,
+            "properties": [
+                "assignment_title": ["type": "string"],
+                "questions": [
+                    "type": "array",
+                    "items": [
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": [
+                            "question_id": ["type": "string"],
+                            "display_label": ["type": "string"],
+                            "prompt_text": ["type": "string"],
+                            "ideal_answer": ["type": "string"],
+                            "grading_criteria": ["type": "string"],
+                            "page_references": [
+                                "type": "array",
+                                "items": ["type": "integer"],
+                            ],
+                        ],
+                        "required": [
+                            "question_id",
+                            "display_label",
+                            "prompt_text",
+                            "ideal_answer",
+                            "grading_criteria",
+                            "page_references",
+                        ],
+                    ],
+                ],
+            ],
+            "required": ["assignment_title", "questions"],
+        ]
+
+        let systemPrompt = """
+        You are an expert teacher assistant.
+        Analyze images of a blank assignment or exam and produce a teacher-reviewable answer key.
+        Identify every distinct question in reading order across all pages.
+        For each question, extract a concise prompt, write a detailed ideal answer or worked solution, and list grading criteria that a teacher can use later.
+        Do not score questions. The teacher will set points manually.
+        If parts of a page are unclear, still provide your best structured extraction and mention uncertainty inside grading_criteria.
+        In prompt_text, ideal_answer, and grading_criteria:
+        - keep normal prose as plain text
+        - wrap every mathematical expression in $...$ or $$...$$
+        - use only valid standard LaTeX inside those delimiters
+        - never use single-dollar math delimiters
+        - if you are unsure how to write an expression in LaTeX, use plain text instead of broken LaTeX
+        """
+
+        let userText = """
+        Session title: \(sessionTitle)
+        The attached pages are blank assignment pages in page order starting at page 1.
+        Return one question object per gradeable question.
+        """
+
+        return StructuredResponseDefinition(
+            schemaName: "master_answer_key",
+            schema: schema,
+            systemPrompt: systemPrompt,
+            userText: userText
+        )
     }
 
     private func batchErrorMessage(from object: [String: Any]) -> String? {

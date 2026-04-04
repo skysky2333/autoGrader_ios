@@ -23,8 +23,18 @@ enum ScanCaptureStorage {
     }
 
     static func writeImageData(_ data: Data, index: Int, directory: URL) throws -> URL {
+        let outputData: Data
+        if
+            let image = UIImage(data: data),
+            let jpegData = normalizedImage(from: image).jpegData(compressionQuality: 0.92)
+        {
+            outputData = jpegData
+        } else {
+            outputData = data
+        }
+
         let fileURL = directory.appendingPathComponent(String(format: "page-%04d.jpg", index + 1))
-        try data.write(to: fileURL, options: .atomic)
+        try outputData.write(to: fileURL, options: .atomic)
         return fileURL
     }
 
@@ -209,11 +219,10 @@ final class CameraCaptureViewController: UIViewController {
     private let previewView = CameraPreviewView()
     private let overlayView = UIView()
     private let countLabel = UILabel()
-    private let hintLabel = UILabel()
     private let feedbackLabel = UILabel()
     private let previewContainerView = UIView()
     private let previewImageView = UIImageView()
-    private let previewTitleLabel = UILabel()
+    private let previewPlaceholderImageView = UIImageView()
     private let captureButton = UIButton(type: .system)
     private let captureActivityIndicator = UIActivityIndicatorView(style: .medium)
     private let deleteLastButton = UIButton(type: .system)
@@ -286,14 +295,6 @@ final class CameraCaptureViewController: UIViewController {
         countLabel.textAlignment = .center
         overlayView.addSubview(countLabel)
 
-        hintLabel.translatesAutoresizingMaskIntoConstraints = false
-        hintLabel.textColor = UIColor.white.withAlphaComponent(0.9)
-        hintLabel.font = .preferredFont(forTextStyle: .footnote)
-        hintLabel.numberOfLines = 0
-        hintLabel.textAlignment = .center
-        hintLabel.text = "Tap capture for each page. You can keep taking photos, then tap Done when the stack is complete."
-        overlayView.addSubview(hintLabel)
-
         feedbackLabel.translatesAutoresizingMaskIntoConstraints = false
         feedbackLabel.textColor = .white
         feedbackLabel.font = .preferredFont(forTextStyle: .subheadline)
@@ -309,6 +310,7 @@ final class CameraCaptureViewController: UIViewController {
         previewContainerView.backgroundColor = UIColor.black.withAlphaComponent(0.45)
         previewContainerView.layer.cornerRadius = 16
         previewContainerView.layer.masksToBounds = true
+        previewContainerView.isUserInteractionEnabled = true
         overlayView.addSubview(previewContainerView)
 
         previewImageView.translatesAutoresizingMaskIntoConstraints = false
@@ -316,12 +318,14 @@ final class CameraCaptureViewController: UIViewController {
         previewImageView.clipsToBounds = true
         previewContainerView.addSubview(previewImageView)
 
-        previewTitleLabel.translatesAutoresizingMaskIntoConstraints = false
-        previewTitleLabel.textColor = UIColor.white.withAlphaComponent(0.95)
-        previewTitleLabel.font = .preferredFont(forTextStyle: .caption1)
-        previewTitleLabel.textAlignment = .center
-        previewTitleLabel.text = "No pages"
-        previewContainerView.addSubview(previewTitleLabel)
+        previewPlaceholderImageView.translatesAutoresizingMaskIntoConstraints = false
+        previewPlaceholderImageView.tintColor = UIColor.white.withAlphaComponent(0.75)
+        previewPlaceholderImageView.contentMode = .scaleAspectFit
+        previewPlaceholderImageView.image = UIImage(systemName: "photo")
+        previewContainerView.addSubview(previewPlaceholderImageView)
+
+        let previewTapGesture = UITapGestureRecognizer(target: self, action: #selector(showLastPhotoPreview))
+        previewContainerView.addGestureRecognizer(previewTapGesture)
 
         captureButton.translatesAutoresizingMaskIntoConstraints = false
         captureButton.tintColor = .white
@@ -393,14 +397,10 @@ final class CameraCaptureViewController: UIViewController {
             doneButton.trailingAnchor.constraint(equalTo: overlayView.trailingAnchor, constant: -20),
             doneButton.topAnchor.constraint(equalTo: overlayView.topAnchor, constant: 16),
 
-            hintLabel.leadingAnchor.constraint(equalTo: overlayView.leadingAnchor, constant: 24),
-            hintLabel.trailingAnchor.constraint(equalTo: overlayView.trailingAnchor, constant: -24),
-            hintLabel.bottomAnchor.constraint(equalTo: captureButton.topAnchor, constant: -24),
-
             feedbackLabel.centerXAnchor.constraint(equalTo: overlayView.centerXAnchor),
             feedbackLabel.leadingAnchor.constraint(greaterThanOrEqualTo: overlayView.leadingAnchor, constant: 32),
             feedbackLabel.trailingAnchor.constraint(lessThanOrEqualTo: overlayView.trailingAnchor, constant: -32),
-            feedbackLabel.bottomAnchor.constraint(equalTo: hintLabel.topAnchor, constant: -16),
+            feedbackLabel.bottomAnchor.constraint(equalTo: captureButton.topAnchor, constant: -24),
 
             captureButton.centerXAnchor.constraint(equalTo: overlayView.centerXAnchor),
             captureButton.bottomAnchor.constraint(equalTo: overlayView.bottomAnchor, constant: -28),
@@ -423,12 +423,12 @@ final class CameraCaptureViewController: UIViewController {
             previewImageView.leadingAnchor.constraint(equalTo: previewContainerView.leadingAnchor, constant: 6),
             previewImageView.trailingAnchor.constraint(equalTo: previewContainerView.trailingAnchor, constant: -6),
             previewImageView.topAnchor.constraint(equalTo: previewContainerView.topAnchor, constant: 6),
-            previewImageView.heightAnchor.constraint(equalToConstant: 80),
+            previewImageView.bottomAnchor.constraint(equalTo: previewContainerView.bottomAnchor, constant: -6),
 
-            previewTitleLabel.leadingAnchor.constraint(equalTo: previewContainerView.leadingAnchor, constant: 6),
-            previewTitleLabel.trailingAnchor.constraint(equalTo: previewContainerView.trailingAnchor, constant: -6),
-            previewTitleLabel.topAnchor.constraint(equalTo: previewImageView.bottomAnchor, constant: 6),
-            previewTitleLabel.bottomAnchor.constraint(equalTo: previewContainerView.bottomAnchor, constant: -6),
+            previewPlaceholderImageView.centerXAnchor.constraint(equalTo: previewContainerView.centerXAnchor),
+            previewPlaceholderImageView.centerYAnchor.constraint(equalTo: previewContainerView.centerYAnchor),
+            previewPlaceholderImageView.widthAnchor.constraint(equalToConstant: 24),
+            previewPlaceholderImageView.heightAnchor.constraint(equalToConstant: 24),
         ])
 
         doneButton.isEnabled = false
@@ -514,8 +514,10 @@ final class CameraCaptureViewController: UIViewController {
     }
 
     private func updatePreview() {
+        let hasPreview = lastPreviewImage != nil
         previewImageView.image = lastPreviewImage
-        previewTitleLabel.text = capturedPageURLs.isEmpty ? "No pages" : "Last page"
+        previewImageView.alpha = hasPreview ? 1.0 : 0.0
+        previewPlaceholderImageView.isHidden = hasPreview
         deleteLastButton.isEnabled = !capturedPageURLs.isEmpty && !isCaptureInProgress
         deleteLastButton.alpha = deleteLastButton.isEnabled ? 1.0 : 0.5
     }
@@ -605,6 +607,17 @@ final class CameraCaptureViewController: UIViewController {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         showFeedback(capturedPageURLs.isEmpty ? "Removed last page" : "Last page deleted")
     }
+
+    @objc
+    private func showLastPhotoPreview() {
+        guard !capturedPageURLs.isEmpty else { return }
+        let image = capturedPageURLs.last.flatMap { UIImage(contentsOfFile: $0.path) } ?? lastPreviewImage
+        guard let image else { return }
+
+        let controller = CameraCapturedImagePreviewController(image: image)
+        controller.modalPresentationStyle = .fullScreen
+        present(controller, animated: true)
+    }
 }
 
 extension CameraCaptureViewController: AVCapturePhotoCaptureDelegate {
@@ -637,8 +650,8 @@ extension CameraCaptureViewController: AVCapturePhotoCaptureDelegate {
                 index: capturedPageURLs.count,
                 directory: captureDirectoryURL
             )
+            lastPreviewImage = UIImage(contentsOfFile: fileURL.path) ?? UIImage(data: data)
             capturedPageURLs.append(fileURL)
-            lastPreviewImage = UIImage(data: data)
         } catch {
             isCaptureInProgress = false
             delegate?.cameraCaptureViewController(self, didFailWithError: error)
@@ -648,6 +661,73 @@ extension CameraCaptureViewController: AVCapturePhotoCaptureDelegate {
         isCaptureInProgress = false
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         showFeedback("Captured page \(capturedPageURLs.count)")
+    }
+}
+
+private final class CameraCapturedImagePreviewController: UIViewController, UIScrollViewDelegate {
+    private let image: UIImage
+    private let scrollView = UIScrollView()
+    private let imageView = UIImageView()
+    private let closeButton = UIButton(type: .system)
+
+    init(image: UIImage) {
+        self.image = image
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.minimumZoomScale = 1
+        scrollView.maximumZoomScale = 5
+        scrollView.delegate = self
+        view.addSubview(scrollView)
+
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.image = image
+        imageView.contentMode = .scaleAspectFit
+        scrollView.addSubview(imageView)
+
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.setTitle("Done", for: .normal)
+        closeButton.tintColor = .white
+        closeButton.backgroundColor = UIColor.black.withAlphaComponent(0.45)
+        closeButton.layer.cornerRadius = 14
+        closeButton.contentEdgeInsets = UIEdgeInsets(top: 10, left: 14, bottom: 10, right: 14)
+        closeButton.addTarget(self, action: #selector(closePreview), for: .touchUpInside)
+        view.addSubview(closeButton)
+
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            imageView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+            imageView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+            imageView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
+            imageView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
+            imageView.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor),
+
+            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
+            closeButton.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
+        ])
+    }
+
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+        imageView
+    }
+
+    @objc
+    private func closePreview() {
+        dismiss(animated: true)
     }
 }
 

@@ -1,1 +1,13 @@
-/.DS_Store
+.DS_Store
+
+# Local Xcode and build artifacts
+.DerivedData/
+.swift-module-cache/
+DerivedData/
+build/
+*.xcresult
+
+# User-specific Xcode state
+*.xcuserstate
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/

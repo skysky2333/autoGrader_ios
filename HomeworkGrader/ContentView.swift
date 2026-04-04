@@ -95,6 +95,10 @@ private struct SessionRow: View {
                     .font(.headline)
                 if session.isFinished {
                     StatusChip(label: "Ended", color: .gray)
+                } else if session.hasPendingRubricReview {
+                    StatusChip(label: "Rubric Ready", color: .blue)
+                } else if session.submissions.contains(where: \.isQueuedForRubric) {
+                    StatusChip(label: "Scans Queued", color: .blue)
                 } else if session.questions.isEmpty {
                     StatusChip(label: "Needs Rubric", color: .orange)
                 } else if session.submissions.contains(where: \.isProcessingPending) {
@@ -132,7 +136,7 @@ private struct NewSessionSheet: View {
     @State private var validationModel = ModelCatalog.defaultValidationModel
     @State private var integerPointsOnly = true
     @State private var relaxedGradingMode = false
-    @State private var answerReasoningEffort: String? = "high"
+    @State private var answerReasoningEffort: String? = "xhigh"
     @State private var gradingReasoningEffort: String? = "high"
     @State private var validationReasoningEffort: String? = "high"
     @State private var answerVerbosity: String? = nil
@@ -141,6 +145,7 @@ private struct NewSessionSheet: View {
     @State private var answerServiceTier: String? = "flex"
     @State private var gradingServiceTier: String? = "flex"
     @State private var validationServiceTier: String? = "flex"
+    @State private var validationMaxAttempts = 2
 
     var body: some View {
         NavigationStack {
@@ -185,7 +190,8 @@ private struct NewSessionSheet: View {
                             validationVerbosity: $validationVerbosity,
                             answerServiceTier: $answerServiceTier,
                             gradingServiceTier: $gradingServiceTier,
-                            validationServiceTier: $validationServiceTier
+                            validationServiceTier: $validationServiceTier,
+                            validationMaxAttempts: $validationMaxAttempts
                         )
                     }
                 }
@@ -234,6 +240,7 @@ private struct NewSessionSheet: View {
             answerServiceTier: answerServiceTier,
             gradingServiceTier: gradingServiceTier,
             validationServiceTier: validationServiceTier,
+            validationMaxAttempts: validationMaxAttempts,
             relaxedGradingMode: relaxedGradingMode,
             apiKeyFingerprint: APIKeyIdentity.fingerprint(for: currentKey),
             integerPointsOnly: integerPointsOnly

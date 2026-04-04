@@ -110,7 +110,7 @@ extension QuestionRubric {
     }
 }
 
-struct MasterExamPayload: Decodable, Sendable {
+struct MasterExamPayload: Codable, Sendable {
     let assignmentTitle: String
     let questions: [GeneratedQuestionPayload]
 
@@ -120,7 +120,7 @@ struct MasterExamPayload: Decodable, Sendable {
     }
 }
 
-struct GeneratedQuestionPayload: Decodable, Sendable {
+struct GeneratedQuestionPayload: Codable, Sendable {
     let questionId: String
     let displayLabel: String
     let promptText: String

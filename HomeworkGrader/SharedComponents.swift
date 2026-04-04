@@ -101,13 +101,16 @@ struct SubmissionRow: View {
                     .font(.headline)
                 Spacer()
                 if submission.isProcessingCompleted {
-                    Text("\(ScoreFormatting.scoreString(submission.totalScore)) / \(ScoreFormatting.scoreString(submission.maxScore))")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    ScorePairText(
+                        awardedPoints: submission.totalScore,
+                        maxPoints: submission.maxScore
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(scoreForegroundColor(awardedPoints: submission.totalScore, maxPoints: submission.maxScore))
                 } else {
-                    Text(submission.isProcessingPending ? "Pending" : "Failed")
+                    Text(pendingStatusLabel)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(submission.isProcessingPending ? .orange : .red)
+                        .foregroundStyle(pendingStatusColor)
                 }
             }
 
@@ -124,7 +127,9 @@ struct SubmissionRow: View {
                     .foregroundStyle(.secondary)
             }
 
-            if submission.isProcessingPending {
+            if submission.isQueuedForRubric {
+                StatusChip(label: "Queued", color: .blue)
+            } else if submission.isProcessingPending {
                 StatusChip(label: "Pending", color: .orange)
             }
 
@@ -142,10 +147,41 @@ struct SubmissionRow: View {
         }
         .padding(.vertical, 4)
     }
+
+    private var pendingStatusLabel: String {
+        if submission.isQueuedForRubric {
+            return "Queued"
+        }
+        return submission.isProcessingPending ? "Pending" : "Failed"
+    }
+
+    private var pendingStatusColor: Color {
+        if submission.isQueuedForRubric {
+            return .blue
+        }
+        return submission.isProcessingPending ? .orange : .red
+    }
 }
 
 func gradeNeedsHighlight(_ grade: QuestionGradeRecord) -> Bool {
-    grade.needsReview || grade.awardedPoints + 0.001 < grade.maxPoints
+    grade.needsReview
+}
+
+func isPartialScore(awardedPoints: Double, maxPoints: Double) -> Bool {
+    awardedPoints + 0.001 < maxPoints
+}
+
+func scoreForegroundColor(awardedPoints: Double, maxPoints: Double) -> Color {
+    isPartialScore(awardedPoints: awardedPoints, maxPoints: maxPoints) ? .red : .secondary
+}
+
+struct ScorePairText: View {
+    let awardedPoints: Double
+    let maxPoints: Double
+
+    var body: some View {
+        Text("\(ScoreFormatting.scoreString(awardedPoints)) / \(ScoreFormatting.scoreString(maxPoints))")
+    }
 }
 
 struct GradeSectionHeader: View {
@@ -221,6 +257,7 @@ struct APIAdvancedSettingsEditor: View {
     @Binding var answerServiceTier: String?
     @Binding var gradingServiceTier: String?
     @Binding var validationServiceTier: String?
+    @Binding var validationMaxAttempts: Int
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -272,6 +309,10 @@ struct APIAdvancedSettingsEditor: View {
                 options: APIRequestTuningCatalog.serviceTierOptions
             )
             .disabled(!validationEnabled)
+            Stepper(value: $validationMaxAttempts, in: 1...5) {
+                LabeledContent("Validation max attempts", value: "\(validationMaxAttempts)")
+            }
+            .disabled(!validationEnabled)
         }
         .padding(.top, 8)
     }
@@ -301,9 +342,12 @@ struct SubmissionDraftSummaryRow: View {
                 Text(draft.studentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Unnamed Student" : draft.studentName)
                     .font(.headline)
                 Spacer()
-                Text("\(ScoreFormatting.scoreString(draft.totalScore)) / \(ScoreFormatting.scoreString(draft.maxScore))")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                ScorePairText(
+                    awardedPoints: draft.totalScore,
+                    maxPoints: draft.maxScore
+                )
+                .font(.subheadline)
+                .foregroundStyle(scoreForegroundColor(awardedPoints: draft.totalScore, maxPoints: draft.maxScore))
             }
 
             if draft.validationNeedsReview {

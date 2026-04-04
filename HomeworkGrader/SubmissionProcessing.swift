@@ -42,6 +42,7 @@ struct SubmissionProcessorConfig: Sendable {
     let validationReasoningEffort: String?
     let validationVerbosity: String?
     let validationServiceTier: String?
+    let validationMaxAttempts: Int
 }
 
 struct ProcessedSubmission: Sendable {
@@ -157,7 +158,10 @@ struct SubmissionProcessor: Sendable {
             return ProcessedSubmission(draft: draft, usageSummaries: usageSummaries)
         }
 
-        let maxValidationAttempts = 3
+        let maxValidationAttempts = max(config.validationMaxAttempts, 1)
+        let validationAttemptLabel = maxValidationAttempts == 1
+            ? "1 validation attempt"
+            : "\(maxValidationAttempts) validation attempts"
         var validationApproved = false
 
         for attempt in 1...maxValidationAttempts {
@@ -233,7 +237,7 @@ struct SubmissionProcessor: Sendable {
             var adjusted = draft
             adjusted.validationNeedsReview = true
             adjusted.overallNotes = [
-                "Automated validation could not fully confirm this grading after multiple attempts.",
+                "Automated validation could not fully confirm this grading after \(validationAttemptLabel).",
                 adjusted.overallNotes,
             ]
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
