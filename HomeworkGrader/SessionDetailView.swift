@@ -188,15 +188,24 @@ struct SessionDetailView: View {
                 Form {
                     rubricSections
                 }
+                .refreshable {
+                    await refreshAllJobStatuses(force: true)
+                }
                 .tag(SessionSectionTab.rubric)
 
                 Form {
                     overviewSections
                 }
+                .refreshable {
+                    await refreshAllJobStatuses(force: true)
+                }
                 .tag(SessionSectionTab.overview)
 
                 Form {
                     resultsSections
+                }
+                .refreshable {
+                    await refreshAllJobStatuses(force: true)
                 }
                 .tag(SessionSectionTab.results)
             }
@@ -2534,6 +2543,12 @@ struct SessionDetailView: View {
         try? modelContext.save()
         feedbackCenter.show("Session deleted.", tone: .info)
         dismiss()
+    }
+
+    @MainActor
+    private func refreshAllJobStatuses(force: Bool) async {
+        await refreshPendingRubricGeneration(force: force)
+        await refreshPendingBatchSubmissions(force: force)
     }
 
     private var hasQueuedBatchSubmissions: Bool {

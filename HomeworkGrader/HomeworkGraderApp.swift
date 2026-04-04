@@ -29,20 +29,12 @@ struct HomeworkGraderApp: App {
                 .environmentObject(feedbackCenter)
                 .task {
                     AppNotificationCoordinator.shared.configure()
-                    await AppBatchRefreshCoordinator.refreshPendingWork(
-                        container: sharedModelContainer,
-                        triggerNotifications: true
+                    await AppBatchRefreshCoordinator.scheduleAppRefreshIfNeeded(
+                        container: sharedModelContainer
                     )
                 }
                 .onChange(of: scenePhase) { _, newValue in
                     switch newValue {
-                    case .active:
-                        Task {
-                            await AppBatchRefreshCoordinator.refreshPendingWork(
-                                container: sharedModelContainer,
-                                triggerNotifications: true
-                            )
-                        }
                     case .background:
                         Task {
                             await AppBatchRefreshCoordinator.scheduleAppRefreshIfNeeded(
