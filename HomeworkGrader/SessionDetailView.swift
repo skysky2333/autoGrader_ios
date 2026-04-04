@@ -800,6 +800,7 @@ struct SessionDetailView: View {
     }
 
     private func cancelOverviewConfigEditing() {
+        isSavingOverviewConfig = false
         isEditingOverviewConfig = false
     }
 
@@ -836,12 +837,8 @@ struct SessionDetailView: View {
     private func beginSaveOverviewConfig() {
         guard !isSavingOverviewConfig else { return }
         isSavingOverviewConfig = true
-
-        Task { @MainActor in
-            await Task.yield()
-            saveOverviewConfigEdits()
-            isSavingOverviewConfig = false
-        }
+        saveOverviewConfigEdits()
+        isSavingOverviewConfig = false
     }
 
     private func startMasterScan() {
