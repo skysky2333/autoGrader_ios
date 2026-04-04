@@ -633,9 +633,38 @@ struct SavedSubmissionDetailView: View {
                         }
                     }
 
+                    if let validationPayload = submission.latestValidationPayload() {
+                        Section("Last Validation Result") {
+                            LabeledContent("Validator verdict", value: validationPayload.isGradingCorrect ? "Confirmed" : "Not confirmed")
+                            Text(validationPayload.validatorSummary)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+
+                            if !validationPayload.issues.isEmpty {
+                                ForEach(validationPayload.issues, id: \.self) { issue in
+                                    Text(issue)
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+
                     if !draft.pageData.isEmpty {
                         Section("Scanned Pages") {
                             ImageStripView(pageData: draft.pageData)
+                        }
+                    }
+                }
+
+                if !debugText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Section {
+                        DisclosureGroup("Debug") {
+                            Text(debugText)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.top, 6)
                         }
                     }
                 }
@@ -738,6 +767,10 @@ struct SavedSubmissionDetailView: View {
         }
     }
 
+    private var debugText: String {
+        submission.debugDump()
+    }
+
     private func saveChanges() {
         let normalized = draft.normalized(integerPointsOnly: integerPointsOnly)
         submission.studentName = normalized.studentName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -747,6 +780,7 @@ struct SavedSubmissionDetailView: View {
         submission.teacherReviewed = true
         submission.processingStateRaw = StudentSubmissionProcessingState.completed.rawValue
         submission.processingDetail = nil
+        submission.setLatestValidationPayload(nil)
         submission.setQuestionGrades(normalized.grades)
         try? modelContext.save()
         feedbackCenter.show("Submission saved.")

@@ -146,6 +146,7 @@ enum AppBatchRefreshCoordinator {
                     apiKey: apiKey,
                     batchID: batchID
                 )
+                storeBatchStatusDebug(snapshot, session: session, batchID: batchID)
                 try await applyBatchStatusSnapshot(snapshot, session: session, apiKey: apiKey)
             } catch {
                 markBatchSubmissions(
@@ -252,7 +253,6 @@ enum AppBatchRefreshCoordinator {
         )
         let errors = try await fetchBatchErrors(snapshot: snapshot, apiKey: apiKey)
         let resultsByID = Dictionary(uniqueKeysWithValues: results.map { ($0.customID, $0) })
-        let errorsByID = Dictionary(uniqueKeysWithValues: errors.map { ($0.customID, $0.message) })
 
         for submission in pendingSubmissions {
             guard let requestID = submission.remoteBatchRequestID else {
@@ -268,6 +268,11 @@ enum AppBatchRefreshCoordinator {
                 recordUsage(result.usage, in: session, apiKey: apiKey)
                 submission.setLatestSubmissionPayload(result.payload)
                 submission.setLatestValidationPayload(nil)
+                submission.updateDebugInfo { info in
+                    info.latestBatchOutputLineJSON = result.rawLineJSON
+                    info.latestBatchErrorLineJSON = nil
+                    info.latestLookupSummary = nil
+                }
 
                 if session.validationEnabledResolved {
                     queueSubmissionForBatchStage(
@@ -285,14 +290,25 @@ enum AppBatchRefreshCoordinator {
                         reviewMessage: nil
                     )
                 }
-            } else if let message = errorsByID[requestID] {
-                markSubmissionFailed(submission, session: session, message: message)
+            } else if let error = errors.first(where: { $0.customID == requestID }) {
+                markSubmissionFailed(submission, session: session, message: error.message)
+                submission.updateDebugInfo { info in
+                    info.latestBatchErrorLineJSON = error.rawLineJSON
+                    info.latestLookupSummary = nil
+                }
             } else {
                 markSubmissionFailed(
                     submission,
                     session: session,
                     message: "OpenAI completed the batch but did not return a result for this submission."
                 )
+                submission.updateDebugInfo { info in
+                    info.latestLookupSummary = missingBatchResultSummary(
+                        requestID: requestID,
+                        results: results.map(\.customID),
+                        errors: errors.map(\.customID)
+                    )
+                }
             }
         }
     }
@@ -310,7 +326,6 @@ enum AppBatchRefreshCoordinator {
         )
         let errors = try await fetchBatchErrors(snapshot: snapshot, apiKey: apiKey)
         let resultsByID = Dictionary(uniqueKeysWithValues: results.map { ($0.customID, $0) })
-        let errorsByID = Dictionary(uniqueKeysWithValues: errors.map { ($0.customID, $0.message) })
 
         for submission in pendingSubmissions {
             guard let requestID = submission.remoteBatchRequestID else {
@@ -325,6 +340,11 @@ enum AppBatchRefreshCoordinator {
             if let result = resultsByID[requestID] {
                 recordUsage(result.usage, in: session, apiKey: apiKey)
                 submission.setLatestValidationPayload(result.payload)
+                submission.updateDebugInfo { info in
+                    info.latestBatchOutputLineJSON = result.rawLineJSON
+                    info.latestBatchErrorLineJSON = nil
+                    info.latestLookupSummary = nil
+                }
 
                 if result.payload.isGradingCorrect {
                     guard let payload = submission.latestSubmissionPayload() else {
@@ -359,18 +379,29 @@ enum AppBatchRefreshCoordinator {
                         detail: "Queued for regrade pass \(submission.currentBatchAttemptNumber) after validation pass \(submission.currentBatchAttemptNumber)."
                     )
                 }
-            } else if let message = errorsByID[requestID] {
+            } else if let error = errors.first(where: { $0.customID == requestID }) {
                 finalizeSubmissionWithValidationReview(
                     submission,
                     session: session,
-                    message: "Validation batch could not finish automatically. \(message)"
+                    message: "Validation batch could not finish automatically. \(error.message)"
                 )
+                submission.updateDebugInfo { info in
+                    info.latestBatchErrorLineJSON = error.rawLineJSON
+                    info.latestLookupSummary = nil
+                }
             } else {
                 finalizeSubmissionWithValidationReview(
                     submission,
                     session: session,
                     message: "OpenAI completed the validation batch but did not return a result for this submission."
                 )
+                submission.updateDebugInfo { info in
+                    info.latestLookupSummary = missingBatchResultSummary(
+                        requestID: requestID,
+                        results: results.map(\.customID),
+                        errors: errors.map(\.customID)
+                    )
+                }
             }
         }
     }
@@ -388,7 +419,6 @@ enum AppBatchRefreshCoordinator {
         )
         let errors = try await fetchBatchErrors(snapshot: snapshot, apiKey: apiKey)
         let resultsByID = Dictionary(uniqueKeysWithValues: results.map { ($0.customID, $0) })
-        let errorsByID = Dictionary(uniqueKeysWithValues: errors.map { ($0.customID, $0.message) })
 
         for submission in pendingSubmissions {
             guard let requestID = submission.remoteBatchRequestID else {
@@ -404,24 +434,40 @@ enum AppBatchRefreshCoordinator {
                 recordUsage(result.usage, in: session, apiKey: apiKey)
                 submission.setLatestSubmissionPayload(result.payload)
                 submission.setLatestValidationPayload(nil)
+                submission.updateDebugInfo { info in
+                    info.latestBatchOutputLineJSON = result.rawLineJSON
+                    info.latestBatchErrorLineJSON = nil
+                    info.latestLookupSummary = nil
+                }
                 queueSubmissionForBatchStage(
                     submission,
                     stage: .validating,
                     attempt: submission.currentBatchAttemptNumber + 1,
                     detail: "Queued for validation pass \(submission.currentBatchAttemptNumber + 1)."
                 )
-            } else if let message = errorsByID[requestID] {
+            } else if let error = errors.first(where: { $0.customID == requestID }) {
                 finalizeSubmissionWithValidationReview(
                     submission,
                     session: session,
-                    message: "Regrade batch could not finish automatically. \(message)"
+                    message: "Regrade batch could not finish automatically. \(error.message)"
                 )
+                submission.updateDebugInfo { info in
+                    info.latestBatchErrorLineJSON = error.rawLineJSON
+                    info.latestLookupSummary = nil
+                }
             } else {
                 finalizeSubmissionWithValidationReview(
                     submission,
                     session: session,
                     message: "OpenAI completed the regrade batch but did not return a result for this submission."
                 )
+                submission.updateDebugInfo { info in
+                    info.latestLookupSummary = missingBatchResultSummary(
+                        requestID: requestID,
+                        results: results.map(\.customID),
+                        errors: errors.map(\.customID)
+                    )
+                }
             }
         }
     }
@@ -766,5 +812,43 @@ enum AppBatchRefreshCoordinator {
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .joined(separator: " ")
+    }
+
+    private static func storeBatchStatusDebug(
+        _ snapshot: OpenAIBatchStatusSnapshot,
+        session: GradingSession,
+        batchID: String
+    ) {
+        guard
+            let data = try? JSONEncoder.prettyPrinted.encode(snapshot),
+            let text = String(data: data, encoding: .utf8)
+        else {
+            return
+        }
+
+        for submission in session.submissions where submission.remoteBatchID == batchID {
+            submission.updateDebugInfo { info in
+                info.batchStatusJSON = text
+            }
+        }
+    }
+
+    private static func missingBatchResultSummary(
+        requestID: String,
+        results: [String],
+        errors: [String]
+    ) -> String {
+        let resultsText = results.isEmpty ? "(none)" : results.joined(separator: ", ")
+        let errorsText = errors.isEmpty ? "(none)" : errors.joined(separator: ", ")
+        return """
+        No matching batch line was found for request id:
+        \(requestID)
+
+        Result custom_ids:
+        \(resultsText)
+
+        Error custom_ids:
+        \(errorsText)
+        """
     }
 }

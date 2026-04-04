@@ -188,6 +188,13 @@ private struct StoredGradeArchive: Codable {
     let hasQuestionNeedingReview: Bool
 }
 
+struct SubmissionDebugInfo: Codable, Sendable {
+    var batchStatusJSON: String?
+    var latestBatchOutputLineJSON: String?
+    var latestBatchErrorLineJSON: String?
+    var latestLookupSummary: String?
+}
+
 private enum PersistedPageStorage {
     static func persistPages(_ pages: [Data], ownerID: UUID, namespace: String) throws -> [URL] {
         let directory = try prepareDirectory(ownerID: ownerID, namespace: namespace)
@@ -491,6 +498,7 @@ final class StudentSubmission {
     @Attribute(.externalStorage) var gradeArchive: Data?
     @Attribute(.externalStorage) var latestSubmissionPayloadArchive: Data?
     @Attribute(.externalStorage) var latestValidationPayloadArchive: Data?
+    @Attribute(.externalStorage) var debugArchive: Data?
 
     init(
         id: UUID = UUID(),
@@ -512,7 +520,8 @@ final class StudentSubmission {
         scanArchive: Data? = nil,
         gradeArchive: Data? = nil,
         latestSubmissionPayloadArchive: Data? = nil,
-        latestValidationPayloadArchive: Data? = nil
+        latestValidationPayloadArchive: Data? = nil,
+        debugArchive: Data? = nil
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -534,6 +543,7 @@ final class StudentSubmission {
         self.gradeArchive = gradeArchive
         self.latestSubmissionPayloadArchive = latestSubmissionPayloadArchive
         self.latestValidationPayloadArchive = latestValidationPayloadArchive
+        self.debugArchive = debugArchive
     }
 }
 
@@ -874,13 +884,76 @@ extension StudentSubmission {
         latestValidationPayloadArchive = payload.flatMap { try? JSONEncoder().encode($0) }
     }
 
+    func debugInfo() -> SubmissionDebugInfo? {
+        guard let debugArchive else { return nil }
+        return try? JSONDecoder().decode(SubmissionDebugInfo.self, from: debugArchive)
+    }
+
+    func setDebugInfo(_ info: SubmissionDebugInfo?) {
+        debugArchive = info.flatMap { try? JSONEncoder().encode($0) }
+    }
+
+    func updateDebugInfo(_ mutate: (inout SubmissionDebugInfo) -> Void) {
+        var info = debugInfo() ?? SubmissionDebugInfo()
+        mutate(&info)
+        setDebugInfo(info)
+    }
+
+    func debugDump() -> String {
+        var sections: [String] = []
+
+        let metadataLines = [
+            "State: \(processingState.rawValue)",
+            batchStage.map { "Pipeline: \($0.rawValue)" },
+            remoteBatchID.map { "Remote batch id: \($0)" },
+            remoteBatchRequestID.map { "Remote request id: \($0)" },
+            processingDetail.map { "Processing detail: \($0)" },
+        ]
+        .compactMap { $0 }
+        if !metadataLines.isEmpty {
+            sections.append(metadataLines.joined(separator: "\n"))
+        }
+
+        if
+            let latestSubmissionPayload = latestSubmissionPayload(),
+            let data = try? JSONEncoder.prettyPrinted.encode(latestSubmissionPayload),
+            let text = String(data: data, encoding: .utf8)
+        {
+            sections.append("Latest submission payload JSON:\n\(text)")
+        }
+
+        if
+            let latestValidationPayload = latestValidationPayload(),
+            let data = try? JSONEncoder.prettyPrinted.encode(latestValidationPayload),
+            let text = String(data: data, encoding: .utf8)
+        {
+            sections.append("Latest validation payload JSON:\n\(text)")
+        }
+
+        if let info = debugInfo() {
+            if let batchStatusJSON = info.batchStatusJSON, !batchStatusJSON.isEmpty {
+                sections.append("Latest batch status JSON:\n\(batchStatusJSON)")
+            }
+            if let latestBatchOutputLineJSON = info.latestBatchOutputLineJSON, !latestBatchOutputLineJSON.isEmpty {
+                sections.append("Latest batch output line JSON:\n\(latestBatchOutputLineJSON)")
+            }
+            if let latestBatchErrorLineJSON = info.latestBatchErrorLineJSON, !latestBatchErrorLineJSON.isEmpty {
+                sections.append("Latest batch error line JSON:\n\(latestBatchErrorLineJSON)")
+            }
+            if let latestLookupSummary = info.latestLookupSummary, !latestLookupSummary.isEmpty {
+                sections.append("Lookup summary:\n\(latestLookupSummary)")
+            }
+        }
+
+        return sections.joined(separator: "\n\n")
+    }
+
     func clearBatchPipelineState() {
         batchStageRaw = nil
         batchAttemptNumber = nil
         remoteBatchID = nil
         remoteBatchRequestID = nil
         latestSubmissionPayloadArchive = nil
-        latestValidationPayloadArchive = nil
     }
 
     private func archiveForPersistedPages(_ pages: [Data]) throws -> (archive: Data, fileURLs: [URL]) {

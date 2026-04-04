@@ -98,7 +98,7 @@ struct OpenAIBatchCreationResult: Sendable {
     let status: String
 }
 
-struct OpenAIBatchStatusSnapshot: Sendable {
+struct OpenAIBatchStatusSnapshot: Codable, Sendable {
     let batchID: String
     let status: String
     let outputFileID: String?
@@ -107,7 +107,7 @@ struct OpenAIBatchStatusSnapshot: Sendable {
     let errors: [String]
 }
 
-struct OpenAIBatchRequestCounts: Sendable {
+struct OpenAIBatchRequestCounts: Codable, Sendable {
     let total: Int
     let completed: Int
     let failed: Int
@@ -117,11 +117,13 @@ struct OpenAIBatchSubmissionResult<Payload: Sendable>: Sendable {
     let customID: String
     let payload: Payload
     let usage: OpenAIUsageSummary?
+    let rawLineJSON: String?
 }
 
 struct OpenAIBatchSubmissionError: Sendable {
     let customID: String
     let message: String
+    let rawLineJSON: String?
 }
 
 private struct StructuredResponseDefinition {
@@ -432,7 +434,8 @@ final class OpenAIService: @unchecked Sendable {
             return OpenAIBatchSubmissionResult(
                 customID: customID,
                 payload: payload,
-                usage: usage
+                usage: usage,
+                rawLineJSON: try? stringifyJSONObject(object)
             )
         }
     }
@@ -506,7 +509,8 @@ final class OpenAIService: @unchecked Sendable {
             return OpenAIBatchSubmissionResult(
                 customID: customID,
                 payload: payload,
-                usage: usage
+                usage: usage,
+                rawLineJSON: try? stringifyJSONObject(object)
             )
         }
     }
@@ -548,7 +552,8 @@ final class OpenAIService: @unchecked Sendable {
             return OpenAIBatchSubmissionResult(
                 customID: customID,
                 payload: payload,
-                usage: usage
+                usage: usage,
+                rawLineJSON: try? stringifyJSONObject(object)
             )
         }
     }
@@ -561,7 +566,11 @@ final class OpenAIService: @unchecked Sendable {
         return objects.compactMap { object in
             guard let customID = object["custom_id"] as? String else { return nil }
             let message = batchErrorMessage(from: object) ?? "OpenAI did not provide an error message for this batch request."
-            return OpenAIBatchSubmissionError(customID: customID, message: message)
+            return OpenAIBatchSubmissionError(
+                customID: customID,
+                message: message,
+                rawLineJSON: try? stringifyJSONObject(object)
+            )
         }
     }
 
