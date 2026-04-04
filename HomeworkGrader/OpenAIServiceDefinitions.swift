@@ -83,7 +83,7 @@ extension OpenAIService {
         You are grading a student's work using a teacher-approved rubric.
         Read the student's handwritten or printed work from the attached page images.
         Return the student's name if visible. If it is missing or unreadable, return an empty string.
-        For the student name, compare character by character and be strict about exact matches. Only set student_name_needs_review=true when one or more characters remain genuinely unclear after careful inspection. Do not mark the name for review if you are confident in the exact reading.
+        For the student name, give your best guess after careful inspection, then compare character by character and be strict about exact matches. Only set student_name_needs_review=true when one or more characters remain genuinely unclear after careful inspection. Do not mark the name for review if you are confident in the exact reading.
         Award partial credit when justified.
         Evaluate both the final answer and the work process for each rubric item.
         Also check for mathematically equivalent answer forms that should still receive credit. Do not mark a grading wrong only because the student's answer is written in a different but equivalent form.
@@ -155,7 +155,7 @@ extension OpenAIService {
         Return is_grading_correct=true only if the candidate grading is correct.
         Return false if any awarded points, correctness flags, process judgment, or review flags should change.
         Be critical of OCR or reading mistakes. Check carefully for text mismatches, symbol mismatches, copied-answer mismatches, and especially student-name mismatches.
-        For the student name, verify character by character and double-check every visible occurrence of the name across all attached pages before deciding.
+        For the student name, give your best guess after careful inspection, then verify character by character and double-check every visible occurrence of the name across all attached pages before deciding.
         If the candidate name seems plausible but one or more characters remain genuinely uncertain after careful re-checking, student_name_needs_review should be true.
         Do not fail validation only because the name is uncertain if the candidate grading correctly marks the name for human review.
         Fail validation if the name appears materially wrong, or if the name is uncertain but the candidate grading failed to flag student_name_needs_review.

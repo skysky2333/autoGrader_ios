@@ -40,6 +40,7 @@ struct SubmissionDraft: Identifiable, Sendable {
     var overallNotes: String
     var grades: [QuestionGradeRecord]
     var pageData: [Data]
+    var debugInfo: SubmissionDebugInfo?
 
     var totalScore: Double {
         grades.reduce(0) { $0 + $1.awardedPoints }
@@ -224,7 +225,8 @@ extension SubmissionDraft {
             validationNeedsReview: submission.validationNeedsReviewEnabled,
             overallNotes: submission.overallNotes,
             grades: submission.questionGrades(),
-            pageData: submission.scans()
+            pageData: submission.scans(),
+            debugInfo: submission.debugInfo()
         )
     }
 
@@ -273,7 +275,8 @@ extension SubmissionDraft {
             validationNeedsReview: false,
             overallNotes: payload.overallNotes,
             grades: grades,
-            pageData: pageData
+            pageData: pageData,
+            debugInfo: nil
         )
     }
 
@@ -322,7 +325,8 @@ extension SubmissionDraft {
             validationNeedsReview: false,
             overallNotes: payload.overallNotes,
             grades: grades,
-            pageData: pageData
+            pageData: pageData,
+            debugInfo: nil
         )
     }
 

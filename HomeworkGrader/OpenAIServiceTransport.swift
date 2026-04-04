@@ -59,26 +59,38 @@ extension OpenAIService {
         requestBody: [String: Any],
         streamHandler: (@Sendable (OpenAIStreamEvent) async -> Void)? = nil
     ) async throws -> OpenAIResult<T> {
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 180
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody, options: [])
+        do {
+            var request = URLRequest(url: endpoint)
+            request.httpMethod = "POST"
+            request.timeoutInterval = 180
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody, options: [])
 
-        let (data, response) = try await session.data(for: request)
-        let payload = try decodeHTTPPayload(data: data, response: response)
-        guard
-            let object = try JSONSerialization.jsonObject(with: payload, options: []) as? [String: Any]
-        else {
-            throw OpenAIServiceError.invalidResponse("OpenAI returned malformed JSON for the structured response.")
+            let (data, response) = try await session.data(for: request)
+            let payload = try decodeHTTPPayload(data: data, response: response)
+            guard
+                let object = try JSONSerialization.jsonObject(with: payload, options: []) as? [String: Any]
+            else {
+                throw OpenAIServiceError.invalidResponse("OpenAI returned malformed JSON for the structured response.")
+            }
+
+            if let streamHandler {
+                if let responseID = object["id"] as? String, !responseID.isEmpty {
+                    await streamHandler(.responseCreated(responseID))
+                }
+                let outputText = try extractOutputText(from: object)
+                await streamHandler(.outputTextDone(outputText))
+                await streamHandler(.completed)
+            }
+
+            return try decodeStructuredResult(from: object, modelID: modelID)
+        } catch {
+            if let streamHandler {
+                await streamHandler(.error(error.localizedDescription))
+            }
+            throw error
         }
-
-        if let streamHandler {
-            await streamHandler(.completed)
-        }
-
-        return try decodeStructuredResult(from: object, modelID: modelID)
     }
 
     func decodeStructuredResult<T: Decodable>(

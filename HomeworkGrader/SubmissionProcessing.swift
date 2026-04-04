@@ -66,21 +66,31 @@ struct SubmissionProcessor: Sendable {
         progress: (@Sendable (SubmissionProcessingStage) async -> Void)? = nil,
         transcript: (@Sendable (SubmissionRequestStreamEvent) async -> Void)? = nil
     ) async throws -> ProcessedSubmission {
+        let debugRecorder = SubmissionDebugRecorder()
+        let combinedTranscript = makeCombinedTranscriptHandler(
+            transcript: transcript,
+            debugRecorder: debugRecorder
+        )
         let initialResult = try await makeInitialGradingResult(
             pageData: pageData,
             requestNamespace: requestNamespace,
             requestLabelPrefix: requestLabelPrefix,
             progress: progress,
-            transcript: transcript
+            transcript: combinedTranscript
         )
-        return try await processValidatedSubmission(
+        var processed = try await processValidatedSubmission(
             initialGradingResult: initialResult,
             pageData: pageData,
             requestNamespace: requestNamespace,
             requestLabelPrefix: requestLabelPrefix,
             progress: progress,
-            transcript: transcript
+            transcript: combinedTranscript
         )
+        processed = ProcessedSubmission(
+            draft: withDebugInfo(processed.draft, debugInfo: await debugRecorder.snapshot()),
+            usageSummaries: processed.usageSummaries
+        )
+        return processed
     }
 
     func validate(
@@ -92,15 +102,25 @@ struct SubmissionProcessor: Sendable {
         progress: (@Sendable (SubmissionProcessingStage) async -> Void)? = nil,
         transcript: (@Sendable (SubmissionRequestStreamEvent) async -> Void)? = nil
     ) async throws -> ProcessedSubmission {
+        let debugRecorder = SubmissionDebugRecorder()
+        let combinedTranscript = makeCombinedTranscriptHandler(
+            transcript: transcript,
+            debugRecorder: debugRecorder
+        )
         let initialResult = OpenAIResult(payload: initialPayload, usage: initialUsage)
-        return try await processValidatedSubmission(
+        var processed = try await processValidatedSubmission(
             initialGradingResult: initialResult,
             pageData: pageData,
             requestNamespace: requestNamespace,
             requestLabelPrefix: requestLabelPrefix,
             progress: progress,
-            transcript: transcript
+            transcript: combinedTranscript
         )
+        processed = ProcessedSubmission(
+            draft: withDebugInfo(processed.draft, debugInfo: await debugRecorder.snapshot()),
+            usageSummaries: processed.usageSummaries
+        )
+        return processed
     }
 
     private func makeInitialGradingResult(
@@ -263,6 +283,93 @@ struct SubmissionProcessor: Sendable {
                 )
             )
         }
+    }
+
+    private func makeCombinedTranscriptHandler(
+        transcript: (@Sendable (SubmissionRequestStreamEvent) async -> Void)?,
+        debugRecorder: SubmissionDebugRecorder
+    ) -> (@Sendable (SubmissionRequestStreamEvent) async -> Void) {
+        { update in
+            await debugRecorder.record(event: update)
+            if let transcript {
+                await transcript(update)
+            }
+        }
+    }
+
+    private func withDebugInfo(_ draft: SubmissionDraft, debugInfo: SubmissionDebugInfo) -> SubmissionDraft {
+        var copy = draft
+        copy.debugInfo = debugInfo.traces.isEmpty ? nil : debugInfo
+        return copy
+    }
+}
+
+actor SubmissionDebugRecorder {
+    private var info = SubmissionDebugInfo()
+
+    func record(event: SubmissionRequestStreamEvent) {
+        let traceID = event.requestID
+        let traceTitle = event.title
+
+        switch event.event {
+        case .preparing(let preview):
+            info.appendTraceEntry(
+                traceID: traceID,
+                traceTitle: traceTitle,
+                entryTitle: "Sent",
+                body: preview.formattedText,
+                kind: .outgoing,
+                mergeConsecutiveDuplicates: false
+            )
+        case .status(let message):
+            info.appendTraceEntry(
+                traceID: traceID,
+                traceTitle: traceTitle,
+                entryTitle: "Status",
+                body: message,
+                kind: .status
+            )
+        case .responseCreated(let responseID):
+            info.appendTraceEntry(
+                traceID: traceID,
+                traceTitle: traceTitle,
+                entryTitle: "Response Created",
+                body: "OpenAI response \(responseID) created.",
+                kind: .status
+            )
+        case .outputTextDelta:
+            break
+        case .outputTextDone(let text):
+            info.appendTraceEntry(
+                traceID: traceID,
+                traceTitle: traceTitle,
+                entryTitle: "Received",
+                body: text,
+                kind: .incoming,
+                mergeConsecutiveDuplicates: false
+            )
+        case .completed:
+            info.appendTraceEntry(
+                traceID: traceID,
+                traceTitle: traceTitle,
+                entryTitle: "Completed",
+                body: "Request completed.",
+                kind: .status
+            )
+        case .error(let message):
+            info.appendTraceEntry(
+                traceID: traceID,
+                traceTitle: traceTitle,
+                entryTitle: "Error",
+                body: message,
+                kind: .error,
+                mergeConsecutiveDuplicates: false
+            )
+        }
+    }
+
+    func snapshot() -> SubmissionDebugInfo {
+        info
     }
 }
 

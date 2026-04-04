@@ -226,6 +226,7 @@ extension SessionDetailView {
                 recordUsage(result.usage, apiKey: apiKey, persistChanges: false)
                 submission.setLatestSubmissionPayload(result.payload)
                 submission.setLatestValidationPayload(nil)
+                recordBatchOutputDebug(submission, requestID: requestID, rawLineJSON: result.rawLineJSON)
                 submission.updateDebugInfo { info in
                     info.latestBatchOutputLineJSON = result.rawLineJSON
                     info.latestBatchErrorLineJSON = nil
@@ -249,6 +250,7 @@ extension SessionDetailView {
                 }
             } else if let error = errors.first(where: { $0.customID == requestID }) {
                 markSubmissionFailed(submission, message: error.message)
+                recordBatchErrorDebug(submission, requestID: requestID, rawLineJSON: error.rawLineJSON, message: error.message)
                 submission.updateDebugInfo { info in
                     info.latestBatchErrorLineJSON = error.rawLineJSON
                     info.latestLookupSummary = nil
@@ -258,12 +260,14 @@ extension SessionDetailView {
                     submission,
                     message: "OpenAI completed the batch but did not return a result for this submission."
                 )
+                let lookupSummary = missingBatchResultSummary(
+                    requestID: requestID,
+                    results: results.map(\.customID),
+                    errors: errors.map(\.customID)
+                )
+                recordLookupDebug(submission, requestID: requestID, summary: lookupSummary)
                 submission.updateDebugInfo { info in
-                    info.latestLookupSummary = missingBatchResultSummary(
-                        requestID: requestID,
-                        results: results.map(\.customID),
-                        errors: errors.map(\.customID)
-                    )
+                    info.latestLookupSummary = lookupSummary
                 }
             }
         }
@@ -292,6 +296,7 @@ extension SessionDetailView {
             if let result = resultsByID[requestID] {
                 recordUsage(result.usage, apiKey: apiKey, persistChanges: false)
                 submission.setLatestValidationPayload(result.payload)
+                recordBatchOutputDebug(submission, requestID: requestID, rawLineJSON: result.rawLineJSON)
                 submission.updateDebugInfo { info in
                     info.latestBatchOutputLineJSON = result.rawLineJSON
                     info.latestBatchErrorLineJSON = nil
@@ -333,21 +338,24 @@ extension SessionDetailView {
                     submission,
                     message: "Validation batch could not finish automatically. \(error.message)"
                 )
+                recordBatchErrorDebug(submission, requestID: requestID, rawLineJSON: error.rawLineJSON, message: error.message)
                 submission.updateDebugInfo { info in
                     info.latestBatchErrorLineJSON = error.rawLineJSON
                     info.latestLookupSummary = nil
                 }
             } else {
+                let lookupSummary = missingBatchResultSummary(
+                    requestID: requestID,
+                    results: results.map(\.customID),
+                    errors: errors.map(\.customID)
+                )
                 finalizeSubmissionWithValidationReview(
                     submission,
                     message: "OpenAI completed the validation batch but did not return a result for this submission."
                 )
+                recordLookupDebug(submission, requestID: requestID, summary: lookupSummary)
                 submission.updateDebugInfo { info in
-                    info.latestLookupSummary = missingBatchResultSummary(
-                        requestID: requestID,
-                        results: results.map(\.customID),
-                        errors: errors.map(\.customID)
-                    )
+                    info.latestLookupSummary = lookupSummary
                 }
             }
         }
@@ -376,6 +384,7 @@ extension SessionDetailView {
                 recordUsage(result.usage, apiKey: apiKey, persistChanges: false)
                 submission.setLatestSubmissionPayload(result.payload)
                 submission.setLatestValidationPayload(nil)
+                recordBatchOutputDebug(submission, requestID: requestID, rawLineJSON: result.rawLineJSON)
                 submission.updateDebugInfo { info in
                     info.latestBatchOutputLineJSON = result.rawLineJSON
                     info.latestBatchErrorLineJSON = nil
@@ -392,21 +401,24 @@ extension SessionDetailView {
                     submission,
                     message: "Regrade batch could not finish automatically. \(error.message)"
                 )
+                recordBatchErrorDebug(submission, requestID: requestID, rawLineJSON: error.rawLineJSON, message: error.message)
                 submission.updateDebugInfo { info in
                     info.latestBatchErrorLineJSON = error.rawLineJSON
                     info.latestLookupSummary = nil
                 }
             } else {
+                let lookupSummary = missingBatchResultSummary(
+                    requestID: requestID,
+                    results: results.map(\.customID),
+                    errors: errors.map(\.customID)
+                )
                 finalizeSubmissionWithValidationReview(
                     submission,
                     message: "OpenAI completed the regrade batch but did not return a result for this submission."
                 )
+                recordLookupDebug(submission, requestID: requestID, summary: lookupSummary)
                 submission.updateDebugInfo { info in
-                    info.latestLookupSummary = missingBatchResultSummary(
-                        requestID: requestID,
-                        results: results.map(\.customID),
-                        errors: errors.map(\.customID)
-                    )
+                    info.latestLookupSummary = lookupSummary
                 }
             }
         }
@@ -521,6 +533,16 @@ extension SessionDetailView {
         for submission in queued where submission.remoteBatchRequestID != nil {
             submission.remoteBatchID = creation.batchID
             submission.processingDetail = "Validation pass \(submission.currentBatchAttemptNumber) batch submitted. \(detailTextForBatchStatus(status: creation.status, requestCounts: nil))"
+            if let requestID = submission.remoteBatchRequestID {
+                submission.appendDebugTraceEntry(
+                    traceID: "batch-output-\(requestID)",
+                    traceTitle: "Validation Pass \(submission.currentBatchAttemptNumber) • Batch Request",
+                    entryTitle: "Submitted",
+                    body: submission.processingDetail ?? "Validation batch submitted.",
+                    kind: .outgoing,
+                    mergeConsecutiveDuplicates: false
+                )
+            }
         }
     }
 
@@ -581,6 +603,16 @@ extension SessionDetailView {
         for submission in queued where submission.remoteBatchRequestID != nil {
             submission.remoteBatchID = creation.batchID
             submission.processingDetail = "Regrade pass \(submission.currentBatchAttemptNumber) batch submitted. \(detailTextForBatchStatus(status: creation.status, requestCounts: nil))"
+            if let requestID = submission.remoteBatchRequestID {
+                submission.appendDebugTraceEntry(
+                    traceID: "batch-output-\(requestID)",
+                    traceTitle: "Regrade Pass \(submission.currentBatchAttemptNumber) • Batch Request",
+                    entryTitle: "Submitted",
+                    body: submission.processingDetail ?? "Regrade batch submitted.",
+                    kind: .outgoing,
+                    mergeConsecutiveDuplicates: false
+                )
+            }
         }
     }
 
@@ -596,6 +628,13 @@ extension SessionDetailView {
         submission.remoteBatchID = nil
         submission.remoteBatchRequestID = nil
         submission.processingDetail = detail
+        submission.appendDebugTraceEntry(
+            traceID: "pipeline-\(submission.id.uuidString)",
+            traceTitle: "Pipeline",
+            entryTitle: "Queued",
+            body: detail,
+            kind: .status
+        )
     }
 
     func completeSubmission(
@@ -691,6 +730,13 @@ extension SessionDetailView {
         submission.setQuestionGrades([])
         submission.totalScore = 0
         submission.maxScore = session.totalPossiblePoints
+        submission.appendDebugTraceEntry(
+            traceID: "pipeline-\(submission.id.uuidString)",
+            traceTitle: "Pipeline",
+            entryTitle: "Failed",
+            body: message,
+            kind: .error
+        )
     }
 
     func detailTextForBatchStatus(
@@ -755,6 +801,13 @@ extension SessionDetailView {
         }
 
         for submission in session.submissions where submission.remoteBatchID == batchID {
+            submission.appendDebugTraceEntry(
+                traceID: "batch-status-\(batchID)",
+                traceTitle: "Batch \(batchID) • Status",
+                entryTitle: snapshot.status,
+                body: text,
+                kind: .batchStatus
+            )
             submission.updateDebugInfo { info in
                 info.batchStatusJSON = text
             }
@@ -778,5 +831,76 @@ extension SessionDetailView {
         Error custom_ids:
         \(errorsText)
         """
+    }
+
+    private func recordBatchOutputDebug(
+        _ submission: StudentSubmission,
+        requestID: String,
+        rawLineJSON: String?
+    ) {
+        guard let rawLineJSON, !rawLineJSON.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        submission.appendDebugTraceEntry(
+            traceID: "batch-output-\(requestID)",
+            traceTitle: "\(debugPhaseTitle(for: submission)) • Batch Output",
+            entryTitle: "Received",
+            body: rawLineJSON,
+            kind: .batchOutput,
+            mergeConsecutiveDuplicates: false
+        )
+    }
+
+    private func recordBatchErrorDebug(
+        _ submission: StudentSubmission,
+        requestID: String,
+        rawLineJSON: String?,
+        message: String
+    ) {
+        if let rawLineJSON, !rawLineJSON.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            submission.appendDebugTraceEntry(
+                traceID: "batch-error-\(requestID)",
+                traceTitle: "\(debugPhaseTitle(for: submission)) • Batch Error",
+                entryTitle: "Error Line",
+                body: rawLineJSON,
+                kind: .batchError,
+                mergeConsecutiveDuplicates: false
+            )
+        }
+        submission.appendDebugTraceEntry(
+            traceID: "batch-error-\(requestID)",
+            traceTitle: "\(debugPhaseTitle(for: submission)) • Batch Error",
+            entryTitle: "Error",
+            body: message,
+            kind: .error
+        )
+    }
+
+    private func recordLookupDebug(
+        _ submission: StudentSubmission,
+        requestID: String,
+        summary: String
+    ) {
+        submission.appendDebugTraceEntry(
+            traceID: "batch-lookup-\(requestID)",
+            traceTitle: "\(debugPhaseTitle(for: submission)) • Lookup",
+            entryTitle: "Lookup Summary",
+            body: summary,
+            kind: .lookup,
+            mergeConsecutiveDuplicates: false
+        )
+    }
+
+    private func debugPhaseTitle(for submission: StudentSubmission) -> String {
+        switch submission.batchStage {
+        case .queued:
+            return "Queued"
+        case .grading:
+            return "Initial Grading"
+        case .validating:
+            return "Validation Pass \(submission.currentBatchAttemptNumber)"
+        case .regrading:
+            return "Regrade Pass \(submission.currentBatchAttemptNumber)"
+        case nil:
+            return "Submission Debug"
+        }
     }
 }

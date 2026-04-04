@@ -192,6 +192,117 @@ struct SubmissionDebugInfo: Codable, Sendable {
     var latestBatchOutputLineJSON: String?
     var latestBatchErrorLineJSON: String?
     var latestLookupSummary: String?
+    var traces: [SubmissionDebugTrace] = []
+}
+
+enum SubmissionDebugTraceKind: String, Codable, Sendable {
+    case outgoing
+    case incoming
+    case status
+    case error
+    case batchStatus
+    case batchOutput
+    case batchError
+    case lookup
+}
+
+struct SubmissionDebugTraceEntry: Identifiable, Codable, Sendable {
+    var id = UUID()
+    var title: String
+    var body: String
+    var kind: SubmissionDebugTraceKind
+    var recordedAt: Date = .now
+}
+
+struct SubmissionDebugTrace: Identifiable, Codable, Sendable {
+    var id: String
+    var title: String
+    var entries: [SubmissionDebugTraceEntry]
+    var lastRecordedAt: Date = .now
+}
+
+extension SubmissionDebugInfo {
+    mutating func appendTraceEntry(
+        traceID: String,
+        traceTitle: String,
+        entryTitle: String,
+        body: String,
+        kind: SubmissionDebugTraceKind,
+        mergeConsecutiveDuplicates: Bool = true
+    ) {
+        let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedBody.isEmpty else { return }
+
+        let clippedBody = clip(trimmedBody, limit: 30_000)
+        let entry = SubmissionDebugTraceEntry(
+            title: entryTitle,
+            body: clippedBody,
+            kind: kind
+        )
+
+        if let index = traces.firstIndex(where: { $0.id == traceID }) {
+            traces[index].title = traceTitle
+            traces[index].lastRecordedAt = entry.recordedAt
+
+            if
+                mergeConsecutiveDuplicates,
+                let lastEntry = traces[index].entries.last,
+                lastEntry.title == entry.title,
+                lastEntry.body == entry.body,
+                lastEntry.kind == entry.kind
+            {
+                moveTraceToEnd(at: index)
+                trimTracesIfNeeded()
+                return
+            }
+
+            traces[index].entries.append(entry)
+            trimEntriesIfNeeded(in: &traces[index].entries)
+            moveTraceToEnd(at: index)
+            trimTracesIfNeeded()
+            return
+        }
+
+        traces.append(
+            SubmissionDebugTrace(
+                id: traceID,
+                title: traceTitle,
+                entries: [entry],
+                lastRecordedAt: entry.recordedAt
+            )
+        )
+        trimTracesIfNeeded()
+    }
+
+    var sortedTraces: [SubmissionDebugTrace] {
+        traces.sorted { lhs, rhs in
+            lhs.lastRecordedAt > rhs.lastRecordedAt
+        }
+    }
+
+    private mutating func moveTraceToEnd(at index: Int) {
+        let trace = traces.remove(at: index)
+        traces.append(trace)
+    }
+
+    private mutating func trimTracesIfNeeded() {
+        let maxTraces = 32
+        if traces.count > maxTraces {
+            traces.removeFirst(traces.count - maxTraces)
+        }
+    }
+
+    private func trimEntriesIfNeeded(in entries: inout [SubmissionDebugTraceEntry]) {
+        let maxEntries = 40
+        if entries.count > maxEntries {
+            entries.removeFirst(entries.count - maxEntries)
+        }
+    }
+
+    private func clip(_ text: String, limit: Int) -> String {
+        guard text.count > limit else { return text }
+        return text.prefix(limit) + "\n...[truncated]"
+    }
 }
 
 enum PersistedPageStorage {

@@ -1,9 +1,41 @@
 import Foundation
 
 enum SessionExporter {
-    static func temporaryPackageURL(for session: GradingSession) throws -> URL {
+    @MainActor
+    static func snapshot(for session: GradingSession) -> SessionPackageSnapshot {
+        SessionPackageSnapshot(
+            title: session.title,
+            createdAt: session.createdAt,
+            answerModelID: session.answerModelID,
+            gradingModelID: session.gradingModelID,
+            overallGradingRules: session.overallGradingRules,
+            estimatedCostUSD: session.estimatedCostUSD,
+            integerPointsOnly: session.integerPointsOnlyEnabled,
+            questions: session.sortedQuestions.map(\.snapshot),
+            masterScans: pageSource(fileURLs: session.masterScanFileURLs(), pageData: session.masterScans()),
+            submissions: session.sortedSubmissions.map { submission in
+                StoredSubmissionExportSnapshot(
+                    id: submission.id,
+                    studentName: submission.studentName,
+                    listDisplayName: submission.listDisplayName,
+                    processingState: submission.processingState.rawValue,
+                    processingDetail: submission.processingDetail,
+                    nameNeedsReview: submission.nameNeedsReviewEnabled,
+                    createdAt: submission.createdAt,
+                    teacherReviewed: submission.teacherReviewed,
+                    totalScore: submission.totalScore,
+                    maxScore: submission.maxScore,
+                    overallNotes: submission.overallNotes,
+                    grades: submission.questionGrades(),
+                    scans: pageSource(fileURLs: submission.scanFileURLs(), pageData: submission.scans())
+                )
+            }
+        )
+    }
+
+    static func temporaryPackageURL(for snapshot: SessionPackageSnapshot) throws -> URL {
         let timestamp = ISO8601DateFormatter().string(from: .now).replacingOccurrences(of: ":", with: "-")
-        let rootName = "\(safeName(session.title))-\(timestamp)"
+        let rootName = "\(safeName(snapshot.title))-\(timestamp)"
         let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(rootName, isDirectory: true)
         let zipURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(rootName).zip")
 
@@ -17,41 +49,35 @@ enum SessionExporter {
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
 
         let csvURL = rootURL.appendingPathComponent("session.csv")
-        try CSVExporter.csvString(for: session).write(to: csvURL, atomically: true, encoding: .utf8)
+        try CSVExporter.csvString(for: snapshot).write(to: csvURL, atomically: true, encoding: .utf8)
 
         let rubricURL = rootURL.appendingPathComponent("rubric.json")
-        let rubricData = try JSONEncoder.prettyPrinted.encode(session.sortedQuestions.map(\.snapshot))
+        let rubricData = try JSONEncoder.prettyPrinted.encode(snapshot.questions)
         try rubricData.write(to: rubricURL)
 
         let summaryURL = rootURL.appendingPathComponent("session-summary.json")
         let summary = SessionPackageSummary(
-            title: session.title,
-            createdAt: session.createdAt,
-            answerModelID: session.answerModelID,
-            gradingModelID: session.gradingModelID,
-            overallGradingRules: session.overallGradingRules,
-            questionCount: session.sortedQuestions.count,
-            submissionCount: session.sortedSubmissions.count,
-            totalPoints: session.totalPossiblePoints,
-            estimatedCostUSD: session.estimatedCostUSD,
-            integerPointsOnly: session.integerPointsOnlyEnabled
+            title: snapshot.title,
+            createdAt: snapshot.createdAt,
+            answerModelID: snapshot.answerModelID,
+            gradingModelID: snapshot.gradingModelID,
+            overallGradingRules: snapshot.overallGradingRules,
+            questionCount: snapshot.questions.count,
+            submissionCount: snapshot.submissions.count,
+            totalPoints: snapshot.totalPoints,
+            estimatedCostUSD: snapshot.estimatedCostUSD,
+            integerPointsOnly: snapshot.integerPointsOnly
         )
         try JSONEncoder.prettyPrinted.encode(summary).write(to: summaryURL)
 
         let masterDir = rootURL.appendingPathComponent("master_scans", isDirectory: true)
         try FileManager.default.createDirectory(at: masterDir, withIntermediateDirectories: true)
-        if let masterScanFileURLs = session.masterScanFileURLs() {
-            try copyPages(from: masterScanFileURLs, to: masterDir)
-        } else {
-            for (index, data) in session.masterScans().enumerated() {
-                try data.write(to: masterDir.appendingPathComponent("page-\(index + 1).jpg"))
-            }
-        }
+        try writePages(snapshot.masterScans, to: masterDir)
 
         let submissionsDir = rootURL.appendingPathComponent("submissions", isDirectory: true)
         try FileManager.default.createDirectory(at: submissionsDir, withIntermediateDirectories: true)
 
-        for submission in session.sortedSubmissions {
+        for submission in snapshot.submissions {
             let childName = "\(safeName(submission.listDisplayName))-\(submission.id.uuidString.prefix(8))"
             let childDir = submissionsDir.appendingPathComponent(childName, isDirectory: true)
             try FileManager.default.createDirectory(at: childDir, withIntermediateDirectories: true)
@@ -59,31 +85,32 @@ enum SessionExporter {
             let stored = StoredSubmissionSummary(
                 id: submission.id,
                 studentName: submission.studentName,
-                processingState: submission.processingState.rawValue,
+                processingState: submission.processingState,
                 processingDetail: submission.processingDetail,
-                nameNeedsReview: submission.nameNeedsReviewEnabled,
+                nameNeedsReview: submission.nameNeedsReview,
                 createdAt: submission.createdAt,
                 teacherReviewed: submission.teacherReviewed,
                 totalScore: submission.totalScore,
                 maxScore: submission.maxScore,
                 overallNotes: submission.overallNotes,
-                grades: submission.questionGrades()
+                grades: submission.grades
             )
             try JSONEncoder.prettyPrinted.encode(stored).write(to: childDir.appendingPathComponent("summary.json"))
 
             let scansDir = childDir.appendingPathComponent("scans", isDirectory: true)
             try FileManager.default.createDirectory(at: scansDir, withIntermediateDirectories: true)
-            if let scanFileURLs = submission.scanFileURLs() {
-                try copyPages(from: scanFileURLs, to: scansDir)
-            } else {
-                for (index, data) in submission.scans().enumerated() {
-                    try data.write(to: scansDir.appendingPathComponent("page-\(index + 1).jpg"))
-                }
-            }
+            try writePages(submission.scans, to: scansDir)
         }
 
         try SimpleZipWriter.createZip(fromDirectory: rootURL, to: zipURL)
         return zipURL
+    }
+
+    private static func pageSource(fileURLs: [URL]?, pageData: [Data]) -> SessionPackagePageSource {
+        if let fileURLs, !fileURLs.isEmpty {
+            return .fileURLs(fileURLs)
+        }
+        return .pageData(pageData)
     }
 
     private static func safeName(_ value: String) -> String {
@@ -106,6 +133,55 @@ enum SessionExporter {
             try FileManager.default.copyItem(at: sourceFileURL, to: destinationURL)
         }
     }
+
+    private static func writePages(_ source: SessionPackagePageSource, to directoryURL: URL) throws {
+        switch source {
+        case .fileURLs(let fileURLs):
+            try copyPages(from: fileURLs, to: directoryURL)
+        case .pageData(let pageData):
+            for (index, data) in pageData.enumerated() {
+                try data.write(to: directoryURL.appendingPathComponent("page-\(index + 1).jpg"))
+            }
+        }
+    }
+}
+
+enum SessionPackagePageSource: Sendable {
+    case fileURLs([URL])
+    case pageData([Data])
+}
+
+struct SessionPackageSnapshot: Sendable {
+    let title: String
+    let createdAt: Date
+    let answerModelID: String
+    let gradingModelID: String
+    let overallGradingRules: String?
+    let estimatedCostUSD: Double?
+    let integerPointsOnly: Bool
+    let questions: [RubricSnapshot]
+    let masterScans: SessionPackagePageSource
+    let submissions: [StoredSubmissionExportSnapshot]
+
+    var totalPoints: Double {
+        questions.reduce(0) { $0 + $1.maxPoints }
+    }
+}
+
+struct StoredSubmissionExportSnapshot: Sendable {
+    let id: UUID
+    let studentName: String
+    let listDisplayName: String
+    let processingState: String
+    let processingDetail: String?
+    let nameNeedsReview: Bool
+    let createdAt: Date
+    let teacherReviewed: Bool
+    let totalScore: Double
+    let maxScore: Double
+    let overallNotes: String
+    let grades: [QuestionGradeRecord]
+    let scans: SessionPackagePageSource
 }
 
 private enum SimpleZipWriter {
@@ -276,6 +352,33 @@ enum CSVExporter {
                 submission.teacherReviewed ? "Yes" : "No",
                 ISO8601DateFormatter().string(from: submission.createdAt),
             ] + questions.map { question in
+                if let grade = gradeByQuestion[question.questionID] {
+                    return "\(formatCSVScore(grade.awardedPoints))/\(formatCSVScore(grade.maxPoints))"
+                }
+                return ""
+            }
+
+            return values.map(escapeCSV).joined(separator: ",")
+        }
+
+        return ([headerLine] + rows).joined(separator: "\n")
+    }
+
+    static func csvString(for snapshot: SessionPackageSnapshot) -> String {
+        let headers = ["Student Name", "Status", "Processing Detail", "Total Score", "Max Score", "Reviewed", "Saved At"] + snapshot.questions.map(\.displayLabel)
+        let headerLine = headers.map(escapeCSV).joined(separator: ",")
+
+        let rows = snapshot.submissions.map { submission in
+            let gradeByQuestion = Dictionary(uniqueKeysWithValues: submission.grades.map { ($0.questionID, $0) })
+            let values = [
+                submission.listDisplayName,
+                submission.processingState.capitalized,
+                submission.processingDetail ?? "",
+                formatCSVScore(submission.totalScore),
+                formatCSVScore(submission.maxScore),
+                submission.teacherReviewed ? "Yes" : "No",
+                ISO8601DateFormatter().string(from: submission.createdAt),
+            ] + snapshot.questions.map { question in
                 if let grade = gradeByQuestion[question.questionID] {
                     return "\(formatCSVScore(grade.awardedPoints))/\(formatCSVScore(grade.maxPoints))"
                 }

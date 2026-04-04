@@ -17,12 +17,17 @@ extension SessionDetailView {
 
     @MainActor
     func exportPackage() async {
+        showPreparingOverlay(title: "Preparing full export", detail: "Collecting session data")
+        let snapshot = SessionExporter.snapshot(for: session)
         showPreparingOverlay(title: "Preparing full export", detail: "Building ZIP archive")
         defer { clearPreparingOverlay() }
         await Task.yield()
 
         do {
-            shareItem = ShareItem(url: try SessionExporter.temporaryPackageURL(for: session))
+            let url = try await Task.detached(priority: .userInitiated) {
+                try SessionExporter.temporaryPackageURL(for: snapshot)
+            }.value
+            shareItem = ShareItem(url: url)
         } catch {
             alertItem = AlertItem(message: "Unable to export the full session package. \(error.localizedDescription)")
         }

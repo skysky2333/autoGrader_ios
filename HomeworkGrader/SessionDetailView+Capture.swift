@@ -494,6 +494,7 @@ extension SessionDetailView {
         )
         submission.setScans(approvedDraft.pageData)
         submission.setQuestionGrades(approvedDraft.grades)
+        submission.setDebugInfo(approvedDraft.debugInfo)
         modelContext.insert(submission)
         session.submissions.append(submission)
         if persistChanges {
@@ -517,6 +518,7 @@ extension SessionDetailView {
         submission.processingDetail = nil
         submission.setLatestValidationPayload(nil)
         submission.setQuestionGrades(normalized.grades)
+        submission.setDebugInfo(normalized.debugInfo)
         submission.clearBatchPipelineState()
         try? modelContext.save()
         feedbackCenter.show(trimmedName.isEmpty ? "Submission regraded." : "Regraded \(trimmedName).")
@@ -693,6 +695,14 @@ extension SessionDetailView {
         submission.setLatestValidationPayload(nil)
         submission.setQuestionGrades([])
         submission.maxScore = session.totalPossiblePoints
+        submission.appendDebugTraceEntry(
+            traceID: "pipeline-\(submission.id.uuidString)",
+            traceTitle: "Pipeline",
+            entryTitle: "Submitted",
+            body: "Submitted initial grading batch request \(requestID) in batch \(batchID). \(detailTextForBatchStatus(status: batchStatus, requestCounts: nil))",
+            kind: .outgoing,
+            mergeConsecutiveDuplicates: false
+        )
     }
 
     @MainActor

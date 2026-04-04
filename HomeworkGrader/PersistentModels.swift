@@ -582,6 +582,26 @@ extension StudentSubmission {
         setDebugInfo(info)
     }
 
+    func appendDebugTraceEntry(
+        traceID: String,
+        traceTitle: String,
+        entryTitle: String,
+        body: String,
+        kind: SubmissionDebugTraceKind,
+        mergeConsecutiveDuplicates: Bool = true
+    ) {
+        updateDebugInfo { info in
+            info.appendTraceEntry(
+                traceID: traceID,
+                traceTitle: traceTitle,
+                entryTitle: entryTitle,
+                body: body,
+                kind: kind,
+                mergeConsecutiveDuplicates: mergeConsecutiveDuplicates
+            )
+        }
+    }
+
     func debugDump() -> String {
         var sections: [String] = []
 
@@ -614,6 +634,15 @@ extension StudentSubmission {
         }
 
         if let info = debugInfo() {
+            if !info.traces.isEmpty {
+                for trace in info.sortedTraces {
+                    let body = trace.entries.map { entry in
+                        "[\(entry.recordedAt.formatted(date: .omitted, time: .standard))] \(entry.title)\n\(entry.body)"
+                    }
+                    .joined(separator: "\n\n")
+                    sections.append("\(trace.title):\n\(body)")
+                }
+            }
             if let batchStatusJSON = info.batchStatusJSON, !batchStatusJSON.isEmpty {
                 sections.append("Latest batch status JSON:\n\(batchStatusJSON)")
             }
