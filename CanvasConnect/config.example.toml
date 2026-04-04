@@ -1,0 +1,22 @@
+canvas_base_url = "https://school.instructure.com"
+course_id = 12345
+assignment_id = 67890
+token_env_var = "CANVAS_API_TOKEN"
+
+# Use the exact assignment column header from a Canvas Gradebook export.
+assignment_column = "Exam 1"
+
+# Where run artifacts should be written.
+output_root = "CanvasConnect/output"
+
+# Matching thresholds.
+match_auto_accept_score = 95
+match_review_floor = 90
+match_margin = 5
+
+# Assignment protections.
+require_unpublished_assignment = true
+lock_assignment_after_upload = true
+enforce_manual_post_policy = true
+
+request_timeout_seconds = 60
