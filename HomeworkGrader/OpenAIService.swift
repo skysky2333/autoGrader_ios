@@ -685,13 +685,14 @@ final class OpenAIService: @unchecked Sendable {
         You are grading a student's work using a teacher-approved rubric.
         Read the student's handwritten or printed work from the attached page images.
         Return the student's name if visible. If it is missing or unreadable, return an empty string.
-        For the student name, compare character by character and be strict about exact matches. If any character is unclear or uncertain, return the best candidate name and set student_name_needs_review=true.
+        For the student name, compare character by character and be strict about exact matches. Only set student_name_needs_review=true when one or more characters remain genuinely unclear after careful inspection. Do not mark the name for review if you are confident in the exact reading.
         Award partial credit when justified.
         Evaluate both the final answer and the work process for each rubric item.
         Also check for mathematically equivalent answer forms that should still receive credit. Do not mark a grading wrong only because the student's answer is written in a different but equivalent form.
         Use only the question ids supplied in the rubric.
         Keep max_points aligned with the rubric values exactly.
-        Mark needs_review=true whenever handwriting, ambiguity, missing work, or rubric mismatch makes the grade uncertain.
+        Mark needs_review=true only when the grade is genuinely uncertain after careful inspection, such as unresolved handwriting ambiguity, unreadable work, or a real rubric mismatch that you cannot confidently resolve.
+        Do not use needs_review as a default safety flag. If you are confident in the grade, set needs_review=false.
         \(relaxedGradingMode ? "Relaxed grading mode is ON. If the student's final answer for a question is correct, award full credit for that question even if the intermediate work is minimal, omitted, or imperfect. Do not require many intermediate steps for full credit when the final answer is correct, unless the rubric explicitly requires process-based scoring." : "")
         In feedback and overall_notes:
         - keep normal prose as plain text
@@ -753,10 +754,11 @@ final class OpenAIService: @unchecked Sendable {
         Return is_grading_correct=true only if the candidate grading is correct.
         Return false if any awarded points, correctness flags, process judgment, or review flags should change.
         Be critical of OCR or reading mistakes. Check carefully for text mismatches, symbol mismatches, copied-answer mismatches, and especially student-name mismatches.
-        For the student name, verify character by character.
-        If the candidate name seems plausible but one or more characters are uncertain, student_name_needs_review should be true.
+        For the student name, verify character by character and double-check every visible occurrence of the name across all attached pages before deciding.
+        If the candidate name seems plausible but one or more characters remain genuinely uncertain after careful re-checking, student_name_needs_review should be true.
         Do not fail validation only because the name is uncertain if the candidate grading correctly marks the name for human review.
         Fail validation if the name appears materially wrong, or if the name is uncertain but the candidate grading failed to flag student_name_needs_review.
+        Also verify that question-level needs_review flags are used sparingly and only when the underlying grade is genuinely uncertain.
         Also check for mathematically equivalent answer forms that should still receive credit. Do not mark a grading wrong only because the student's answer is written in a different but equivalent form.
         Keep validator_summary concise and actionable so it can be used to regrade the submission if needed.
         In validator_summary and issues:

@@ -505,103 +505,142 @@ struct SavedSubmissionDetailView: View {
     let submission: StudentSubmission
     let integerPointsOnly: Bool
     let onRegrade: (() -> Void)?
+    let onDelete: (() -> Void)?
     @State private var draft: SubmissionDraft
     @State private var isSaving = false
+    @State private var showingDeleteConfirmation = false
 
-    init(submission: StudentSubmission, onRegrade: (() -> Void)? = nil) {
+    init(
+        submission: StudentSubmission,
+        onRegrade: (() -> Void)? = nil,
+        onDelete: (() -> Void)? = nil
+    ) {
         self.submission = submission
         let integerOnly = submission.session?.integerPointsOnlyEnabled ?? false
         self.integerPointsOnly = integerOnly
         self.onRegrade = onRegrade
+        self.onDelete = onDelete
         _draft = State(initialValue: SubmissionDraft.fromStoredSubmission(submission).normalized(integerPointsOnly: integerOnly))
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Student") {
-                    TextField("Student name", text: $draft.studentName)
-                        .textInputAutocapitalization(.words)
-                    Toggle("Name needs review", isOn: $draft.nameNeedsReview)
+                if canEditSubmission {
+                    Section("Student") {
+                        TextField("Student name", text: $draft.studentName)
+                            .textInputAutocapitalization(.words)
+                        Toggle("Name needs review", isOn: $draft.nameNeedsReview)
 
-                    if draft.nameNeedsReview {
-                        HighlightNotice(
-                            message: "Name needs human review.",
-                            color: .orange
-                        )
-                    }
-                    if draft.validationNeedsReview {
-                        HighlightNotice(
-                            message: "Automated validation could not confirm this grading. Human review is recommended.",
-                            color: .orange
-                        )
-                    }
-                    LabeledContent("Saved", value: submission.createdAt.formatted(date: .abbreviated, time: .shortened))
-                    LabeledContent("Score") {
-                        ScorePairText(
-                            awardedPoints: draft.totalScore,
-                            maxPoints: draft.maxScore
-                        )
-                        .foregroundStyle(scoreForegroundColor(awardedPoints: draft.totalScore, maxPoints: draft.maxScore))
-                    }
-                }
-
-                if !draft.pageData.isEmpty {
-                    Section("Scanned Pages") {
-                        ImageStripView(pageData: draft.pageData)
-                    }
-                }
-
-                ForEach(draft.grades.indices, id: \.self) { index in
-                    Section {
-                        if gradeNeedsHighlight(draft.grades[index]) {
+                        if draft.nameNeedsReview {
                             HighlightNotice(
-                                message: "This answer needs human review.",
+                                message: "Name needs human review.",
                                 color: .orange
                             )
                         }
+                        if draft.validationNeedsReview {
+                            HighlightNotice(
+                                message: "Automated validation could not confirm this grading. Human review is recommended.",
+                                color: .orange
+                            )
+                        }
+                        LabeledContent("Saved", value: submission.createdAt.formatted(date: .abbreviated, time: .shortened))
+                        LabeledContent("Score") {
+                            ScorePairText(
+                                awardedPoints: draft.totalScore,
+                                maxPoints: draft.maxScore
+                            )
+                            .foregroundStyle(scoreForegroundColor(awardedPoints: draft.totalScore, maxPoints: draft.maxScore))
+                        }
+                    }
 
-                        Stepper(value: $draft.grades[index].awardedPoints, in: 0...draft.grades[index].maxPoints, step: PointPolicy.step(integerOnly: integerPointsOnly)) {
-                            LabeledContent("Awarded points") {
-                                ScorePairText(
-                                    awardedPoints: draft.grades[index].awardedPoints,
-                                    maxPoints: draft.grades[index].maxPoints
+                    if !draft.pageData.isEmpty {
+                        Section("Scanned Pages") {
+                            ImageStripView(pageData: draft.pageData)
+                        }
+                    }
+
+                    ForEach(draft.grades.indices, id: \.self) { index in
+                        Section {
+                            if gradeNeedsHighlight(draft.grades[index]) {
+                                HighlightNotice(
+                                    message: "This answer needs human review.",
+                                    color: .orange
                                 )
-                                .foregroundStyle(
-                                    scoreForegroundColor(
+                            }
+
+                            Stepper(value: $draft.grades[index].awardedPoints, in: 0...draft.grades[index].maxPoints, step: PointPolicy.step(integerOnly: integerPointsOnly)) {
+                                LabeledContent("Awarded points") {
+                                    ScorePairText(
                                         awardedPoints: draft.grades[index].awardedPoints,
                                         maxPoints: draft.grades[index].maxPoints
                                     )
-                                )
+                                    .foregroundStyle(
+                                        scoreForegroundColor(
+                                            awardedPoints: draft.grades[index].awardedPoints,
+                                            maxPoints: draft.grades[index].maxPoints
+                                        )
+                                    )
+                                }
                             }
-                        }
 
-                        Toggle("Final answer correct", isOn: $draft.grades[index].isAnswerCorrect)
-                        Toggle("Work process correct", isOn: $draft.grades[index].isProcessCorrect)
-                        Toggle("Needs review", isOn: $draft.grades[index].needsReview)
+                            Toggle("Final answer correct", isOn: $draft.grades[index].isAnswerCorrect)
+                            Toggle("Work process correct", isOn: $draft.grades[index].isProcessCorrect)
+                            Toggle("Needs review", isOn: $draft.grades[index].needsReview)
 
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Feedback")
-                                .font(.footnote.weight(.semibold))
-                            TextEditor(text: $draft.grades[index].feedback)
-                                .frame(minHeight: 100)
-                            RenderedPreviewButton(title: "\(draft.grades[index].displayLabel) Feedback Preview", text: draft.grades[index].feedback)
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Feedback")
+                                    .font(.footnote.weight(.semibold))
+                                TextEditor(text: $draft.grades[index].feedback)
+                                    .frame(minHeight: 100)
+                                RenderedPreviewButton(title: "\(draft.grades[index].displayLabel) Feedback Preview", text: draft.grades[index].feedback)
+                            }
+                        } header: {
+                            GradeSectionHeader(
+                                title: draft.grades[index].displayLabel,
+                                isHighlighted: gradeNeedsHighlight(draft.grades[index])
+                            )
                         }
-                    } header: {
-                        GradeSectionHeader(
-                            title: draft.grades[index].displayLabel,
-                            isHighlighted: gradeNeedsHighlight(draft.grades[index])
-                        )
+                    }
+
+                    Section("Overall Notes") {
+                        TextEditor(text: $draft.overallNotes)
+                            .frame(minHeight: 120)
+                        RenderedPreviewButton(title: "Overall Notes Preview", text: draft.overallNotes)
+                    }
+                } else {
+                    Section("Status") {
+                        LabeledContent("State", value: submissionStatusTitle)
+                        if let batchStageLabel {
+                            LabeledContent("Pipeline", value: batchStageLabel)
+                        }
+                        LabeledContent("Saved", value: submission.createdAt.formatted(date: .abbreviated, time: .shortened))
+                        if
+                            let detail = submission.processingDetail,
+                            !detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        {
+                            Text(detail)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        if
+                            !submission.overallNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                            submission.overallNotes != submission.processingDetail
+                        {
+                            Text(submission.overallNotes)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if !draft.pageData.isEmpty {
+                        Section("Scanned Pages") {
+                            ImageStripView(pageData: draft.pageData)
+                        }
                     }
                 }
-
-                Section("Overall Notes") {
-                    TextEditor(text: $draft.overallNotes)
-                        .frame(minHeight: 120)
-                    RenderedPreviewButton(title: "Overall Notes Preview", text: draft.overallNotes)
-                }
             }
-            .navigationTitle(draft.studentName.isEmpty ? "Saved Result" : draft.studentName)
+            .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -611,23 +650,35 @@ struct SavedSubmissionDetailView: View {
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button {
-                        beginSave()
-                    } label: {
-                        if isSaving {
-                            ProgressView()
-                        } else {
-                            Text("Save")
+                    if canEditSubmission {
+                        Button {
+                            beginSave()
+                        } label: {
+                            if isSaving {
+                                ProgressView()
+                            } else {
+                                Text("Save")
+                            }
                         }
+                        .disabled(draft.studentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
                     }
-                    .disabled(draft.studentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    if let onRegrade {
-                        Button("Regrade") {
-                            onRegrade()
+                    Menu {
+                        if canEditSubmission, let onRegrade {
+                            Button("Regrade") {
+                                onRegrade()
+                            }
                         }
+
+                        if onDelete != nil {
+                            Button("Delete", role: .destructive) {
+                                showingDeleteConfirmation = true
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
                     }
                 }
             }
@@ -635,6 +686,56 @@ struct SavedSubmissionDetailView: View {
         }
         .feedbackToast()
         .activityOverlay(isPresented: isSaving, text: "Saving submission...")
+        .confirmationDialog("Delete this result?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
+            if let onDelete {
+                Button("Delete Result", role: .destructive) {
+                    dismiss()
+                    onDelete()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(submission.hasRemoteBatchInFlight ? "This removes the local result only. It does not cancel the OpenAI batch job." : "This removes the saved result from the session.")
+        }
+    }
+
+    private var canEditSubmission: Bool {
+        submission.isProcessingCompleted
+    }
+
+    private var navigationTitle: String {
+        if canEditSubmission {
+            return draft.studentName.isEmpty ? "Saved Result" : draft.studentName
+        }
+        return submission.listDisplayName
+    }
+
+    private var submissionStatusTitle: String {
+        if submission.isQueuedForRubric {
+            return "Queued"
+        }
+        if submission.isProcessingPending {
+            return "Pending"
+        }
+        if submission.isProcessingFailed {
+            return "Failed"
+        }
+        return "Completed"
+    }
+
+    private var batchStageLabel: String? {
+        switch submission.batchStage {
+        case .queued:
+            return "Waiting for rubric approval"
+        case .grading:
+            return "Initial grading"
+        case .validating:
+            return "Validation pass \(submission.currentBatchAttemptNumber)"
+        case .regrading:
+            return "Regrade pass \(submission.currentBatchAttemptNumber)"
+        case nil:
+            return nil
+        }
     }
 
     private func saveChanges() {

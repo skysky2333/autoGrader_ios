@@ -292,12 +292,15 @@ struct SessionDetailView: View {
             )
         }
         .sheet(item: $selectedSubmission) { submission in
-            SavedSubmissionDetailView(submission: submission) {
+            SavedSubmissionDetailView(
+                submission: submission,
+                onRegrade: {
                 selectedSubmission = nil
                 Task {
                     await regradeSubmission(submission)
                 }
-            }
+                }
+            )
         }
         .sheet(item: $shareItem) { item in
             ShareSheet(items: [item.url])
@@ -393,45 +396,16 @@ struct SessionDetailView: View {
     private var overviewSections: some View {
         if session.questions.isEmpty {
             Section("Blank Assignment") {
-                if session.hasPendingRubricReview {
-                    Button {
-                        openPendingRubricReview()
-                    } label: {
-                        Label("Review Generated Answer Key", systemImage: "checklist")
-                    }
-                    .disabled(session.hasPendingRubricGeneration)
-                } else {
-                    Button {
-                        startMasterScan()
-                    } label: {
-                        Label("Scan Blank Assignment", systemImage: "doc.viewfinder")
-                    }
-                    .disabled(!hasAPIKey || session.hasPendingRubricGeneration)
+                Button {
+                    startMasterScan()
+                } label: {
+                    Label("Scan Blank Assignment", systemImage: "doc.viewfinder")
                 }
+                .disabled(!hasAPIKey || session.hasPendingRubricGeneration)
 
-                if session.hasPendingRubricGeneration {
-                    Text("The answer key request has been sent. The app will keep checking in the background and open the rubric review as soon as it finishes.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else if session.hasPendingRubricReview {
-                    Text("A generated answer key is ready to review and approve.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else if session.hasFailedRubricGeneration {
-                    Text("The last answer key request did not finish. Review the status below, then rescan when ready.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(hasAPIKey ? "Scan the teacher copy or blank exam pages, then review the generated rubric before grading students." : "Add your API key in Settings first.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            if !session.masterScans().isEmpty {
-                Section(session.hasPendingRubricGeneration ? "Pending Master Pages" : "Master Pages") {
-                    ImageStripView(pageData: session.masterScans())
-                }
+                Text(hasAPIKey ? "Scan the teacher copy or blank exam pages, then review the generated rubric from the Rubric tab before grading students." : "Add your API key in Settings first.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
             if !session.masterScans().isEmpty {
@@ -446,50 +420,6 @@ struct SessionDetailView: View {
                     Text("You can scan student submissions now, even before the rubric is approved. HGrader will save the scans first and let you submit them all after the rubric is ready.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                }
-            }
-
-            if session.hasPendingRubricGeneration || session.hasFailedRubricGeneration {
-                Section("Answer Key Status") {
-                    if session.hasPendingRubricGeneration {
-                        Button {
-                            Task {
-                                await refreshPendingRubricGeneration(force: true)
-                            }
-                        } label: {
-                            Label(isRefreshingPendingRubric ? "Checking Answer Key..." : "Check Answer Key", systemImage: "arrow.clockwise")
-                        }
-                        .disabled(isRefreshingPendingRubric)
-
-                        if isRefreshingPendingRubric {
-                            HStack(spacing: 10) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text("Checking OpenAI for the latest answer key status...")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
-                        } else if let lastPendingRubricRefreshAt {
-                            Text("Last checked \(lastPendingRubricRefreshAt.formatted(date: .omitted, time: .shortened)).")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    if let detail = session.rubricProcessingDetail, !detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text(detail)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if session.hasFailedRubricGeneration {
-                        Button {
-                            startMasterScan()
-                        } label: {
-                            Label("Rescan Blank Assignment", systemImage: "arrow.clockwise.circle")
-                        }
-                        .disabled(!hasAPIKey)
-                    }
                 }
             }
         } else {
@@ -613,8 +543,74 @@ struct SessionDetailView: View {
     private var rubricSections: some View {
         if session.questions.isEmpty {
             Section("Rubric") {
-                Text("No rubric yet. Scan the blank assignment from the Overview tab first.")
+                if session.hasPendingRubricReview {
+                    Button {
+                        openPendingRubricReview()
+                    } label: {
+                        Label("Review Generated Answer Key", systemImage: "checklist")
+                    }
+                }
+
+                Text(
+                    session.hasPendingRubricGeneration
+                        ? "The answer key request has been sent. Track its progress here and review it as soon as it finishes."
+                        : session.hasPendingRubricReview
+                            ? "A generated answer key is ready to review and approve."
+                            : session.hasFailedRubricGeneration
+                                ? "The last answer key request did not finish. Review the status below, then rescan when ready."
+                                : "No rubric yet. Scan the blank assignment from the Overview tab first."
+                )
                     .foregroundStyle(.secondary)
+            }
+
+            if !session.masterScans().isEmpty {
+                Section(session.hasPendingRubricGeneration ? "Pending Master Pages" : "Master Pages") {
+                    ImageStripView(pageData: session.masterScans())
+                }
+            }
+
+            if session.hasPendingRubricGeneration || session.hasFailedRubricGeneration || session.hasPendingRubricReview {
+                Section("Answer Key Status") {
+                    if session.hasPendingRubricGeneration {
+                        Button {
+                            Task {
+                                await refreshPendingRubricGeneration(force: true)
+                            }
+                        } label: {
+                            Label(isRefreshingPendingRubric ? "Checking Answer Key..." : "Check Answer Key", systemImage: "arrow.clockwise")
+                        }
+                        .disabled(isRefreshingPendingRubric)
+
+                        if isRefreshingPendingRubric {
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Checking OpenAI for the latest answer key status...")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } else if let lastPendingRubricRefreshAt {
+                            Text("Last checked \(lastPendingRubricRefreshAt.formatted(date: .omitted, time: .shortened)).")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if let detail = session.rubricProcessingDetail, !detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(detail)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if session.hasFailedRubricGeneration {
+                        Button {
+                            startMasterScan()
+                        } label: {
+                            Label("Rescan Blank Assignment", systemImage: "arrow.clockwise.circle")
+                        }
+                        .disabled(!hasAPIKey)
+                    }
+                }
             }
         } else {
             Section("Master Pages") {
