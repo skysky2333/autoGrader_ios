@@ -8,6 +8,4 @@ build/
 *.xcresult
 
 # User-specific Xcode state
-*.xcuserstate
-*.xcodeproj/xcuserdata/
-*.xcworkspace/xcuserdata/
+*.xcodeproj
