@@ -206,11 +206,19 @@ struct SubmissionDraftFormSections: View {
             TextField("Student name", text: $draft.studentName)
                 .textInputAutocapitalization(.words)
             Toggle("Name needs review", isOn: $draft.nameNeedsReview)
+            Toggle("Needs attention", isOn: $draft.needsAttention)
 
             if draft.nameNeedsReview {
                 HighlightNotice(
                     message: "Name needs human review.",
                     color: .orange
+                )
+            }
+
+            if draft.needsAttention {
+                HighlightNotice(
+                    message: "This submission needs teacher attention before the grade can be trusted.",
+                    color: .red
                 )
             }
 
@@ -221,6 +229,14 @@ struct SubmissionDraftFormSections: View {
             if draft.requiresAttention {
                 Label("Teacher review is required before saving.", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
+            }
+        }
+
+        if draft.needsAttention || !draft.attentionReasonsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Section("Attention Reasons") {
+                TextEditor(text: $draft.attentionReasonsText)
+                    .frame(minHeight: 120)
+                RenderedPreviewButton(title: "Attention Reasons Preview", text: draft.attentionReasonsText)
             }
         }
 
@@ -544,6 +560,12 @@ struct SavedSubmissionDetailView: View {
                                 color: .orange
                             )
                         }
+                        if draft.needsAttention {
+                            HighlightNotice(
+                                message: "This submission needs teacher attention before the grade can be trusted.",
+                                color: .red
+                            )
+                        }
                         LabeledContent("Saved", value: submission.createdAt.formatted(date: .abbreviated, time: .shortened))
                         LabeledContent("Score") {
                             ScorePairText(
@@ -608,6 +630,14 @@ struct SavedSubmissionDetailView: View {
                             .frame(minHeight: 120)
                         RenderedPreviewButton(title: "Overall Notes Preview", text: draft.overallNotes)
                     }
+
+                    if draft.needsAttention || !draft.attentionReasonsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Section("Attention Reasons") {
+                            TextEditor(text: $draft.attentionReasonsText)
+                                .frame(minHeight: 120)
+                            RenderedPreviewButton(title: "Attention Reasons Preview", text: draft.attentionReasonsText)
+                        }
+                    }
                 } else {
                     Section("Status") {
                         LabeledContent("State", value: submissionStatusTitle)
@@ -630,6 +660,20 @@ struct SavedSubmissionDetailView: View {
                             Text(submission.overallNotes)
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if submission.needsAttentionEnabled || !(submission.attentionReasonsText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Section("Needs Attention") {
+                            Text(submission.needsAttentionEnabled ? "Yes" : "No")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(submission.needsAttentionEnabled ? .red : .secondary)
+
+                            if let attentionReasonsText = submission.attentionReasonsText, !attentionReasonsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Text(attentionReasonsText)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
 
@@ -775,6 +819,8 @@ struct SavedSubmissionDetailView: View {
         let normalized = draft.normalized(integerPointsOnly: integerPointsOnly)
         submission.studentName = normalized.studentName.trimmingCharacters(in: .whitespacesAndNewlines)
         submission.nameNeedsReview = normalized.nameNeedsReview
+        submission.needsAttention = normalized.needsAttention
+        submission.attentionReasonsText = normalized.attentionReasonsText.trimmingCharacters(in: .whitespacesAndNewlines)
         submission.validationNeedsReview = false
         submission.overallNotes = normalized.overallNotes.trimmingCharacters(in: .whitespacesAndNewlines)
         submission.teacherReviewed = true

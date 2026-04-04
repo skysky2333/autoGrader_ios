@@ -96,8 +96,8 @@ private enum ScanImagePreparation {
 }
 
 private enum SessionSectionTab: String, CaseIterable, Identifiable {
-    case overview = "Overview"
     case rubric = "Rubric"
+    case overview = "Overview"
     case results = "Results"
 
     var id: String { rawValue }
@@ -174,9 +174,33 @@ struct SessionDetailView: View {
     @State private var submissionBeingRegraded: StudentSubmission?
 
     var body: some View {
-        Form {
-            tabPickerSection
-            tabContentSections
+        VStack(spacing: 0) {
+            Picker("Section", selection: $selectedTab) {
+                ForEach(SessionSectionTab.allCases) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.top, 8)
+
+            TabView(selection: $selectedTab) {
+                Form {
+                    rubricSections
+                }
+                .tag(SessionSectionTab.rubric)
+
+                Form {
+                    overviewSections
+                }
+                .tag(SessionSectionTab.overview)
+
+                Form {
+                    resultsSections
+                }
+                .tag(SessionSectionTab.results)
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
         }
         .navigationTitle(session.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -295,10 +319,13 @@ struct SessionDetailView: View {
             SavedSubmissionDetailView(
                 submission: submission,
                 onRegrade: {
-                selectedSubmission = nil
-                Task {
-                    await regradeSubmission(submission)
-                }
+                    selectedSubmission = nil
+                    Task {
+                        await regradeSubmission(submission)
+                    }
+                },
+                onDelete: {
+                    deleteSubmission(submission)
                 }
             )
         }
@@ -369,29 +396,6 @@ struct SessionDetailView: View {
         .activityOverlay(isPresented: isSavingOverviewConfig, text: "Saving config...")
     }
 
-    private var tabPickerSection: some View {
-        Section {
-            Picker("Section", selection: $selectedTab) {
-                ForEach(SessionSectionTab.allCases) { tab in
-                    Text(tab.rawValue).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-        }
-    }
-
-    @ViewBuilder
-    private var tabContentSections: some View {
-        switch selectedTab {
-        case .overview:
-            overviewSections
-        case .rubric:
-            rubricSections
-        case .results:
-            resultsSections
-        }
-    }
-
     @ViewBuilder
     private var overviewSections: some View {
         if session.questions.isEmpty {
@@ -453,7 +457,51 @@ struct SessionDetailView: View {
             }
         }
 
-        Section("Overview") {
+        Section("Summary") {
+            LabeledContent("Questions", value: "\(session.questions.count)")
+            LabeledContent("Saved submissions", value: "\(session.submissions.count)")
+            LabeledContent("Total points", value: ScoreFormatting.scoreString(session.totalPossiblePoints))
+
+            if let overallAverageScore {
+                LabeledContent("Average total score") {
+                    Text("\(ScoreFormatting.scoreString(overallAverageScore)) / \(ScoreFormatting.scoreString(session.totalPossiblePoints))")
+                        .foregroundStyle(summaryColor(for: overallAveragePercentage ?? 0))
+                }
+            } else {
+                LabeledContent("Average total score", value: "No graded submissions yet")
+            }
+
+            if !session.sortedQuestions.isEmpty {
+                ForEach(session.sortedQuestions) { question in
+                    LabeledContent(question.displayLabel) {
+                        if let average = averageScore(for: question) {
+                            let percentage = average / max(question.maxPoints, 0.001)
+                            Text("\(ScoreFormatting.scoreString(average)) / \(ScoreFormatting.scoreString(question.maxPoints))")
+                                .foregroundStyle(summaryColor(for: percentage))
+                        } else {
+                            Text("No grades yet")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+
+        Section("Settings") {
+            if isEditingOverviewConfig {
+                Toggle("Integer points only", isOn: $draftIntegerPointsOnly)
+                Toggle("Relaxed grading mode", isOn: $draftRelaxedGradingMode)
+                Toggle("Session ended", isOn: $draftSessionEnded)
+            }
+
+            LabeledContent("Point mode", value: session.pointModeLabel)
+            LabeledContent("Batch pages / submission", value: session.maxPagesLabel)
+            LabeledContent("Integer points only", value: session.integerPointsOnlyEnabled ? "On" : "Off")
+            LabeledContent("Relaxed grading mode", value: session.relaxedModeLabel)
+            LabeledContent("Session ended", value: session.isFinished ? "On" : "Off")
+        }
+
+        Section("Advanced API Settings") {
             if isEditingOverviewConfig {
                 ModelTextField(title: "Answer generation model", text: $draftAnswerModelID)
                 ModelTextField(title: "Grading model", text: $draftGradingModelID)
@@ -461,31 +509,6 @@ struct SessionDetailView: View {
                 if draftValidationEnabled {
                     ModelTextField(title: "Validation model", text: $draftValidationModelID)
                 }
-            } else {
-                LabeledContent("Answer model", value: session.answerModelID)
-                LabeledContent("Grading model", value: session.gradingModelID)
-                LabeledContent("Validation model", value: session.validationModelLabel)
-            }
-            LabeledContent("Point mode", value: session.pointModeLabel)
-            LabeledContent("Questions", value: "\(session.questions.count)")
-            LabeledContent("Saved submissions", value: "\(session.submissions.count)")
-            LabeledContent("Total points", value: ScoreFormatting.scoreString(session.totalPossiblePoints))
-            LabeledContent("API cost", value: session.sessionCostLabel)
-            LabeledContent("Batch pages / submission", value: session.maxPagesLabel)
-
-            if isEditingOverviewConfig {
-                Toggle("Integer points only", isOn: $draftIntegerPointsOnly)
-                Toggle("Relaxed grading mode", isOn: $draftRelaxedGradingMode)
-                Toggle("Session ended", isOn: $draftSessionEnded)
-            } else {
-                LabeledContent("Integer points only", value: session.integerPointsOnlyEnabled ? "On" : "Off")
-                LabeledContent("Relaxed grading mode", value: session.relaxedModeLabel)
-                LabeledContent("Session ended", value: session.isFinished ? "On" : "Off")
-            }
-        }
-
-        Section("Advanced API Settings") {
-            if isEditingOverviewConfig {
                 APIAdvancedSettingsEditor(
                     validationEnabled: $draftValidationEnabled,
                     answerReasoningEffort: $draftAnswerReasoningEffort,
@@ -501,6 +524,10 @@ struct SessionDetailView: View {
                 )
             }
 
+            LabeledContent("Answer model", value: session.answerModelID)
+            LabeledContent("Grading model", value: session.gradingModelID)
+            LabeledContent("Validation model", value: session.validationModelLabel)
+            LabeledContent("API cost", value: session.sessionCostLabel)
             LabeledContent("Answer reasoning", value: session.answerReasoningLabel)
             LabeledContent("Grading reasoning", value: session.gradingReasoningLabel)
             LabeledContent("Validation reasoning", value: session.validationReasoningLabel)
@@ -749,16 +776,17 @@ struct SessionDetailView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(filteredSubmissions) { submission in
-                    Group {
-                        if submission.isProcessingPending {
-                            SubmissionRow(submission: submission)
-                        } else {
-                            Button {
-                                selectedSubmission = submission
-                            } label: {
-                                SubmissionRow(submission: submission)
-                            }
-                            .buttonStyle(.plain)
+                    Button {
+                        selectedSubmission = submission
+                    } label: {
+                        SubmissionRow(submission: submission)
+                    }
+                    .buttonStyle(.plain)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            deleteSubmission(submission)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
                         }
                     }
                 }
@@ -1246,6 +1274,8 @@ struct SessionDetailView: View {
         let submission = StudentSubmission(
             studentName: trimmedName,
             nameNeedsReview: approvedDraft.nameNeedsReview,
+            needsAttention: approvedDraft.needsAttention,
+            attentionReasonsText: approvedDraft.attentionReasonsText.trimmingCharacters(in: .whitespacesAndNewlines),
             validationNeedsReview: false,
             overallNotes: approvedDraft.overallNotes.trimmingCharacters(in: .whitespacesAndNewlines),
             teacherReviewed: true,
@@ -1270,6 +1300,8 @@ struct SessionDetailView: View {
 
         submission.studentName = trimmedName
         submission.nameNeedsReview = normalized.nameNeedsReview
+        submission.needsAttention = normalized.needsAttention
+        submission.attentionReasonsText = normalized.attentionReasonsText.trimmingCharacters(in: .whitespacesAndNewlines)
         submission.validationNeedsReview = normalized.validationNeedsReview
         submission.overallNotes = normalized.overallNotes.trimmingCharacters(in: .whitespacesAndNewlines)
         submission.teacherReviewed = true
@@ -1580,6 +1612,7 @@ struct SessionDetailView: View {
             let submission = StudentSubmission(
                 studentName: "Pending Submission \(index + 1)",
                 nameNeedsReview: false,
+                needsAttention: false,
                 overallNotes: "OpenAI batch job submitted. Result pending.",
                 teacherReviewed: false,
                 totalScore: 0,
@@ -1609,6 +1642,15 @@ struct SessionDetailView: View {
             modelContext.delete(submission)
         }
         try? modelContext.save()
+    }
+
+    private func deleteSubmission(_ submission: StudentSubmission) {
+        if let index = session.submissions.firstIndex(where: { $0.id == submission.id }) {
+            session.submissions.remove(at: index)
+        }
+        modelContext.delete(submission)
+        try? modelContext.save()
+        feedbackCenter.show("Result deleted.", tone: .info)
     }
 
     @MainActor
@@ -2208,6 +2250,8 @@ struct SessionDetailView: View {
 
         submission.studentName = draft.studentName.trimmingCharacters(in: .whitespacesAndNewlines)
         submission.nameNeedsReview = draft.nameNeedsReview
+        submission.needsAttention = draft.needsAttention
+        submission.attentionReasonsText = draft.attentionReasonsText.trimmingCharacters(in: .whitespacesAndNewlines)
         submission.validationNeedsReview = draft.validationNeedsReview
         submission.overallNotes = draft.overallNotes.trimmingCharacters(in: .whitespacesAndNewlines)
         submission.teacherReviewed = false
@@ -2264,6 +2308,8 @@ struct SessionDetailView: View {
         submission.processingDetail = message
         submission.overallNotes = message
         submission.teacherReviewed = false
+        submission.needsAttention = false
+        submission.attentionReasonsText = nil
         submission.validationNeedsReview = false
         submission.setLatestSubmissionPayload(nil)
         submission.setLatestValidationPayload(nil)
@@ -2490,10 +2536,6 @@ struct SessionDetailView: View {
         dismiss()
     }
 
-    private var hasPendingBatchSubmissions: Bool {
-        session.submissions.contains(where: \.isProcessingPending)
-    }
-
     private var hasQueuedBatchSubmissions: Bool {
         session.submissions.contains(where: \.isQueuedForRubric)
     }
@@ -2516,6 +2558,40 @@ struct SessionDetailView: View {
         guard !trimmed.isEmpty else { return sortedSubmissions }
         return sortedSubmissions.filter {
             $0.listDisplayName.localizedCaseInsensitiveContains(trimmed)
+        }
+    }
+
+    private var completedSubmissions: [StudentSubmission] {
+        session.submissions.filter(\.isProcessingCompleted)
+    }
+
+    private var overallAverageScore: Double? {
+        guard !completedSubmissions.isEmpty else { return nil }
+        let total = completedSubmissions.reduce(0) { $0 + $1.totalScore }
+        return total / Double(completedSubmissions.count)
+    }
+
+    private var overallAveragePercentage: Double? {
+        guard let overallAverageScore, session.totalPossiblePoints > 0 else { return nil }
+        return overallAverageScore / session.totalPossiblePoints
+    }
+
+    private func averageScore(for question: QuestionRubric) -> Double? {
+        let scores = completedSubmissions.compactMap { submission -> Double? in
+            submission.questionGrades().first(where: { $0.questionID == question.questionID })?.awardedPoints
+        }
+        guard !scores.isEmpty else { return nil }
+        return scores.reduce(0, +) / Double(scores.count)
+    }
+
+    private func summaryColor(for percentage: Double) -> Color {
+        switch percentage {
+        case ..<0.5:
+            return .red
+        case ..<0.8:
+            return .orange
+        default:
+            return .green
         }
     }
 

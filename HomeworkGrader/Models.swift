@@ -482,6 +482,8 @@ final class StudentSubmission {
     var createdAt: Date
     var studentName: String
     var nameNeedsReview: Bool?
+    var needsAttention: Bool?
+    var attentionReasonsText: String?
     var validationNeedsReview: Bool?
     var overallNotes: String
     var teacherReviewed: Bool
@@ -505,6 +507,8 @@ final class StudentSubmission {
         createdAt: Date = .now,
         studentName: String,
         nameNeedsReview: Bool = false,
+        needsAttention: Bool = false,
+        attentionReasonsText: String? = nil,
         validationNeedsReview: Bool = false,
         overallNotes: String,
         teacherReviewed: Bool,
@@ -527,6 +531,8 @@ final class StudentSubmission {
         self.createdAt = createdAt
         self.studentName = studentName
         self.nameNeedsReview = nameNeedsReview
+        self.needsAttention = needsAttention
+        self.attentionReasonsText = attentionReasonsText
         self.validationNeedsReview = validationNeedsReview
         self.overallNotes = overallNotes
         self.teacherReviewed = teacherReviewed
@@ -802,6 +808,10 @@ extension StudentSubmission {
 
     var nameNeedsReviewEnabled: Bool {
         nameNeedsReview ?? false
+    }
+
+    var needsAttentionEnabled: Bool {
+        needsAttention ?? false
     }
 
     var validationNeedsReviewEnabled: Bool {

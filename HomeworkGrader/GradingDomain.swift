@@ -34,6 +34,8 @@ struct SubmissionDraft: Identifiable, Sendable {
     var id = UUID()
     var studentName: String
     var nameNeedsReview: Bool
+    var needsAttention: Bool
+    var attentionReasonsText: String
     var validationNeedsReview: Bool
     var overallNotes: String
     var grades: [QuestionGradeRecord]
@@ -49,6 +51,7 @@ struct SubmissionDraft: Identifiable, Sendable {
 
     var requiresAttention: Bool {
         studentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        needsAttention ||
         nameNeedsReview ||
         validationNeedsReview ||
         grades.contains(where: \.needsReview)
@@ -141,12 +144,16 @@ struct GeneratedQuestionPayload: Codable, Sendable {
 struct SubmissionPayload: Codable, Sendable {
     let studentName: String
     let studentNameNeedsReview: Bool
+    let needsAttention: Bool
+    let attentionReasons: [String]
     let questionResults: [SubmissionQuestionPayload]
     let overallNotes: String
 
     enum CodingKeys: String, CodingKey {
         case studentName = "student_name"
         case studentNameNeedsReview = "student_name_needs_review"
+        case needsAttention = "needs_attention"
+        case attentionReasons = "attention_reasons"
         case questionResults = "question_results"
         case overallNotes = "overall_notes"
     }
@@ -212,6 +219,8 @@ extension SubmissionDraft {
         SubmissionDraft(
             studentName: submission.studentName,
             nameNeedsReview: submission.nameNeedsReviewEnabled,
+            needsAttention: submission.needsAttentionEnabled,
+            attentionReasonsText: submission.attentionReasonsText ?? "",
             validationNeedsReview: submission.validationNeedsReviewEnabled,
             overallNotes: submission.overallNotes,
             grades: submission.questionGrades(),
@@ -259,6 +268,8 @@ extension SubmissionDraft {
         return SubmissionDraft(
             studentName: payload.studentName.trimmingCharacters(in: .whitespacesAndNewlines),
             nameNeedsReview: payload.studentNameNeedsReview || payload.studentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            needsAttention: payload.needsAttention,
+            attentionReasonsText: payload.attentionReasons.joined(separator: "\n"),
             validationNeedsReview: false,
             overallNotes: payload.overallNotes,
             grades: grades,
@@ -306,6 +317,8 @@ extension SubmissionDraft {
         return SubmissionDraft(
             studentName: payload.studentName.trimmingCharacters(in: .whitespacesAndNewlines),
             nameNeedsReview: payload.studentNameNeedsReview || payload.studentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            needsAttention: payload.needsAttention,
+            attentionReasonsText: payload.attentionReasons.joined(separator: "\n"),
             validationNeedsReview: false,
             overallNotes: payload.overallNotes,
             grades: grades,
@@ -314,9 +327,14 @@ extension SubmissionDraft {
     }
 
     func normalized(integerPointsOnly: Bool) -> SubmissionDraft {
-        guard integerPointsOnly else { return self }
-
         var copy = self
+        copy.attentionReasonsText = copy.attentionReasonsText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !copy.needsAttention {
+            copy.attentionReasonsText = ""
+        }
+
+        guard integerPointsOnly else { return copy }
+
         copy.grades = copy.grades.map { grade in
             var adjusted = grade
             adjusted.maxPoints = PointPolicy.normalize(adjusted.maxPoints, integerOnly: true)

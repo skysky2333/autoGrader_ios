@@ -141,6 +141,10 @@ struct SubmissionRow: View {
                 StatusChip(label: "Validation Inconclusive", color: .orange)
             }
 
+            if submission.needsAttentionEnabled {
+                StatusChip(label: "Needs Attention", color: .red)
+            }
+
             if submission.nameNeedsReviewEnabled || (submission.isProcessingCompleted && submission.hasQuestionNeedingReview) {
                 StatusChip(label: "Review Needed", color: .orange)
             }
@@ -352,6 +356,10 @@ struct SubmissionDraftSummaryRow: View {
 
             if draft.validationNeedsReview {
                 StatusChip(label: "Validation Inconclusive", color: .orange)
+            }
+
+            if draft.needsAttention {
+                StatusChip(label: "Needs Attention", color: .red)
             }
 
             if draft.nameNeedsReview || draft.grades.contains(where: \.needsReview) {

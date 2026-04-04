@@ -4,11 +4,12 @@ import SwiftData
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \GradingSession.createdAt, order: .reverse) private var sessions: [GradingSession]
+    @State private var navigationPath: [UUID] = []
     @State private var showingNewSession = false
     @State private var showingSettings = false
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             Group {
                 if sessions.isEmpty {
                     ContentUnavailableView {
@@ -31,9 +32,7 @@ struct ContentView: View {
                         }
 
                         ForEach(sessions) { session in
-                            NavigationLink {
-                                SessionDetailView(session: session)
-                            } label: {
+                            NavigationLink(value: session.id) {
                                 SessionRow(session: session)
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -46,6 +45,14 @@ struct ContentView: View {
                         }
                     }
                     .listStyle(.insetGrouped)
+                }
+            }
+            .navigationDestination(for: UUID.self) { sessionID in
+                if let session = sessions.first(where: { $0.id == sessionID }) {
+                    SessionDetailView(session: session)
+                } else {
+                    Text("Session not found.")
+                        .foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("HGrader")
@@ -66,7 +73,9 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showingNewSession) {
-            NewSessionSheet()
+            NewSessionSheet { sessionID in
+                navigationPath = [sessionID]
+            }
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView()
@@ -128,6 +137,7 @@ private struct NewSessionSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var feedbackCenter: FeedbackCenter
+    let onCreate: (UUID) -> Void
 
     @State private var title = ""
     @State private var answerModel = ModelCatalog.defaultAnswerModel
@@ -248,6 +258,7 @@ private struct NewSessionSheet: View {
         modelContext.insert(session)
         try? modelContext.save()
         feedbackCenter.show("Session created.")
+        onCreate(session.id)
         dismiss()
     }
 }

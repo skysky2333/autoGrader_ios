@@ -660,6 +660,11 @@ final class OpenAIService: @unchecked Sendable {
             "properties": [
                 "student_name": ["type": "string"],
                 "student_name_needs_review": ["type": "boolean"],
+                "needs_attention": ["type": "boolean"],
+                "attention_reasons": [
+                    "type": "array",
+                    "items": ["type": "string"],
+                ],
                 "question_results": [
                     "type": "array",
                     "items": [
@@ -687,7 +692,14 @@ final class OpenAIService: @unchecked Sendable {
                 ],
                 "overall_notes": ["type": "string"],
             ],
-            "required": ["student_name", "student_name_needs_review", "question_results", "overall_notes"],
+            "required": [
+                "student_name",
+                "student_name_needs_review",
+                "needs_attention",
+                "attention_reasons",
+                "question_results",
+                "overall_notes",
+            ],
         ]
 
         let systemPrompt = """
@@ -702,6 +714,9 @@ final class OpenAIService: @unchecked Sendable {
         Keep max_points aligned with the rubric values exactly.
         Mark needs_review=true only when the grade is genuinely uncertain after careful inspection, such as unresolved handwriting ambiguity, unreadable work, or a real rubric mismatch that you cannot confidently resolve.
         Do not use needs_review as a default safety flag. If you are confident in the grade, set needs_review=false.
+        needs_attention is a separate submission-level flag. Set needs_attention=true only for serious problems that mean the submission itself needs teacher attention before the grade can be trusted, such as the wrong exam, obviously incomplete or cut-off pages, pages so blurry they cannot be read, or missing critical pages.
+        Do not use needs_attention for ordinary uncertainty on one problem; that belongs in needs_review instead.
+        When needs_attention=true, add clear concrete reasons to attention_reasons. When needs_attention=false, return attention_reasons as an empty array.
         \(relaxedGradingMode ? "Relaxed grading mode is ON. If the student's final answer for a question is correct, award full credit for that question even if the intermediate work is minimal, omitted, or imperfect. Do not require many intermediate steps for full credit when the final answer is correct, unless the rubric explicitly requires process-based scoring." : "")
         In feedback and overall_notes:
         - keep normal prose as plain text
@@ -768,6 +783,7 @@ final class OpenAIService: @unchecked Sendable {
         Do not fail validation only because the name is uncertain if the candidate grading correctly marks the name for human review.
         Fail validation if the name appears materially wrong, or if the name is uncertain but the candidate grading failed to flag student_name_needs_review.
         Also verify that question-level needs_review flags are used sparingly and only when the underlying grade is genuinely uncertain.
+        Also verify that needs_attention is reserved for serious submission-level problems such as unreadable scans, incomplete pages, or the wrong exam.
         Also check for mathematically equivalent answer forms that should still receive credit. Do not mark a grading wrong only because the student's answer is written in a different but equivalent form.
         Keep validator_summary concise and actionable so it can be used to regrade the submission if needed.
         In validator_summary and issues:
