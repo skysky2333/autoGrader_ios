@@ -81,6 +81,34 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(locked.final_status, "matched")
         self.assertEqual(locked.reviewer_note, "")
 
+    def test_prompt_for_record_empty_choice_defaults_to_first_candidate(self) -> None:
+        config = CanvasConnectConfig()
+        record = MatchRecord(
+            local_submission_id="1",
+            local_student_name="Alice Smith",
+            total_score=9,
+            max_score=10,
+            pdf_path="/tmp/alice.pdf",
+            first_scan_path="/tmp/alice-page-1.jpg",
+            name_needs_review=False,
+            teacher_reviewed=False,
+            status="needs_review",
+            reason="fuzzy_full",
+            matched_user_id=101,
+            matched_student_name="Alice Smith",
+            match_score=95,
+            runner_up_score=88,
+            candidates=[MatchCandidate(user_id=101, name="Alice Smith", score=95, reason="fuzzy_full")],
+        )
+        roster_list = [CanvasStudent(user_id=101, name="Alice Smith")]
+        roster = {101: roster_list[0]}
+
+        with patch("builtins.input", side_effect=[""]):
+            locked = _prompt_for_record(record, roster_list, roster, {}, {"1": "Alice Smith"}, config)
+
+        self.assertEqual(locked.final_status, "matched")
+        self.assertEqual(locked.final_user_id, 101)
+
     def test_prompt_for_record_uncertain_choice_asks_for_note(self) -> None:
         config = CanvasConnectConfig()
         record = MatchRecord(

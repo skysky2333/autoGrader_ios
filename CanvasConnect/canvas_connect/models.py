@@ -214,6 +214,7 @@ class UploadResult:
     final_user_id: int | None
     final_student_name: str | None
     status: str
+    step: str = ""
     file_id: int | None = None
     submission_id: int | None = None
     message: str = ""

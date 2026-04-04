@@ -284,7 +284,10 @@ def upload_submissions_step(
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     results: list[UploadResult] = []
+    total_attempts = len(locked_records)
+    processed = 0
     for record in locked_records:
+        processed += 1
         if record.final_status != "matched" or record.final_user_id is None:
             results.append(
                 UploadResult(
@@ -293,11 +296,13 @@ def upload_submissions_step(
                     final_user_id=record.final_user_id,
                     final_student_name=record.final_student_name,
                     status="skipped",
+                    step="precheck",
                     message="Record was not locked to a Canvas student.",
                 )
             )
             continue
 
+        file_id: int | None = None
         try:
             file_payload = client.upload_submission_file(
                 config.course_id,
@@ -305,11 +310,12 @@ def upload_submissions_step(
                 record.final_user_id,
                 Path(record.pdf_path),
             )
+            file_id = int(file_payload["id"])
             submission_payload = client.submit_file_on_behalf(
                 config.course_id,
                 config.assignment_id,
                 record.final_user_id,
-                int(file_payload["id"]),
+                file_id,
             )
             results.append(
                 UploadResult(
@@ -318,12 +324,15 @@ def upload_submissions_step(
                     final_user_id=record.final_user_id,
                     final_student_name=record.final_student_name,
                     status="uploaded",
-                    file_id=int(file_payload["id"]),
+                    step="submit",
+                    file_id=file_id,
                     submission_id=int(submission_payload.get("id", 0)) if submission_payload.get("id") else None,
                     message="Uploaded and submitted.",
                 )
             )
         except CanvasAPIError as error:
+            error_text = str(error)
+            error_step = "submit" if "/submissions failed" in error_text and "/submissions/" not in error_text else "upload"
             results.append(
                 UploadResult(
                     local_submission_id=record.local_submission_id,
@@ -331,8 +340,14 @@ def upload_submissions_step(
                     final_user_id=record.final_user_id,
                     final_student_name=record.final_student_name,
                     status="failed",
-                    message=str(error),
+                    step=error_step,
+                    file_id=file_id,
+                    message=error_text,
                 )
+            )
+            print(
+                f"[{processed}/{total_attempts}] failed at {error_step}: "
+                f"{record.local_student_name} -> {record.final_student_name} ({record.final_user_id})"
             )
 
     if config.enforce_manual_post_policy or config.lock_assignment_after_upload:
@@ -349,6 +364,12 @@ def upload_submissions_step(
     _write_json(json_path, [result.to_dict() for result in results])
     _write_upload_csv(csv_path, results)
     print("Upload finished: " + ", ".join(f"{key}={value}" for key, value in summarize_uploads(results).items()))
+    print(f"Detailed upload logs: {json_path}")
+    failure_summary = summarize_failure_messages(results)
+    if failure_summary:
+        print("Failure summary:")
+        for message, count in failure_summary[:3]:
+            print(f"  - {count}x {message}")
     return json_path
 
 
@@ -553,7 +574,9 @@ def _prompt_for_record(
         print("  s. mark uncertain / skip this record")
         print("  u. enter a Canvas user id manually")
 
-        choice = input("Choose candidate number, or r/s/u: ").strip().casefold()
+        choice = input("Choose candidate number, or r/s/u [default 1]: ").strip().casefold()
+        if not choice and displayed_candidates:
+            choice = "1"
         if choice.isdigit():
             index = int(choice) - 1
             if index < 0 or index >= len(ranked):
@@ -686,6 +709,7 @@ def _write_upload_csv(path: Path, results: list[UploadResult]) -> None:
                 "final_user_id",
                 "final_student_name",
                 "status",
+                "step",
                 "file_id",
                 "submission_id",
                 "message",
@@ -694,3 +718,13 @@ def _write_upload_csv(path: Path, results: list[UploadResult]) -> None:
         writer.writeheader()
         for result in results:
             writer.writerow(result.to_dict())
+
+
+def summarize_failure_messages(results: list[UploadResult]) -> list[tuple[str, int]]:
+    grouped: dict[str, int] = {}
+    for result in results:
+        if result.status != "failed":
+            continue
+        key = f"{result.step}: {result.message}"
+        grouped[key] = grouped.get(key, 0) + 1
+    return sorted(grouped.items(), key=lambda item: (-item[1], item[0]))
