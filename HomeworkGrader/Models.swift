@@ -826,6 +826,10 @@ extension StudentSubmission {
         isProcessingPending && !(remoteBatchID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
     }
 
+    var hasRemoteBatchReservation: Bool {
+        isProcessingPending && !(remoteBatchRequestID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
     func scans() -> [Data] {
         ArchiveDecodeCache.pages(ownerID: id, archive: scanArchive)
     }

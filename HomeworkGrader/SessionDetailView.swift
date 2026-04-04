@@ -1811,7 +1811,7 @@ struct SessionDetailView: View {
             do {
                 try await submitQueuedBatchPipelineStages(apiKey: apiKey)
             } catch {
-                for submission in session.submissions where submission.isProcessingPending && !submission.hasRemoteBatchInFlight {
+                for submission in session.submissions where submission.isAwaitingRemoteProcessing && !submission.hasRemoteBatchInFlight {
                     submission.processingDetail = "Automatic batch submission failed. \(error.localizedDescription)"
                 }
             }
@@ -2136,10 +2136,11 @@ struct SessionDetailView: View {
 
     private func submitQueuedValidationBatch(apiKey: String) async throws {
         let queued = session.submissions.filter {
-            $0.isProcessingPending && !$0.hasRemoteBatchInFlight && $0.batchStage == .validating
+            $0.isProcessingPending && !$0.hasRemoteBatchReservation && $0.batchStage == .validating
         }
         guard !queued.isEmpty else { return }
 
+        var reservedSubmissions: [StudentSubmission] = []
         let inputs = queued.compactMap { submission -> OpenAIBatchValidationInput? in
             guard
                 let pageFileURLs = ensureSubmissionScanFileURLs(for: submission),
@@ -2153,6 +2154,8 @@ struct SessionDetailView: View {
             }
             let requestID = "validate-\(submission.id.uuidString)-\(UUID().uuidString)"
             submission.remoteBatchRequestID = requestID
+            submission.processingDetail = "Preparing validation pass \(submission.currentBatchAttemptNumber) batch submission."
+            reservedSubmissions.append(submission)
             return OpenAIBatchValidationInput(
                 customID: requestID,
                 pageFileURLs: pageFileURLs,
@@ -2160,18 +2163,28 @@ struct SessionDetailView: View {
             )
         }
         guard !inputs.isEmpty else { return }
+        try? modelContext.save()
 
-        let creation = try await OpenAIService.shared.createSubmissionValidationBatch(
-            apiKey: apiKey,
-            modelID: session.validationModelIDResolved,
-            rubric: session.sortedQuestions.map(\.snapshot),
-            overallRules: session.overallGradingRules,
-            submissions: inputs,
-            integerPointsOnly: session.integerPointsOnlyEnabled,
-            relaxedGradingMode: session.relaxedGradingModeEnabled,
-            reasoningEffort: session.validationReasoningEffort,
-            verbosity: session.validationVerbosity
-        )
+        let creation: OpenAIBatchCreationResult
+        do {
+            creation = try await OpenAIService.shared.createSubmissionValidationBatch(
+                apiKey: apiKey,
+                modelID: session.validationModelIDResolved,
+                rubric: session.sortedQuestions.map(\.snapshot),
+                overallRules: session.overallGradingRules,
+                submissions: inputs,
+                integerPointsOnly: session.integerPointsOnlyEnabled,
+                relaxedGradingMode: session.relaxedGradingModeEnabled,
+                reasoningEffort: session.validationReasoningEffort,
+                verbosity: session.validationVerbosity
+            )
+        } catch {
+            for submission in reservedSubmissions {
+                submission.remoteBatchRequestID = nil
+            }
+            try? modelContext.save()
+            throw error
+        }
 
         for submission in queued where submission.remoteBatchRequestID != nil {
             submission.remoteBatchID = creation.batchID
@@ -2181,10 +2194,11 @@ struct SessionDetailView: View {
 
     private func submitQueuedRegradingBatch(apiKey: String) async throws {
         let queued = session.submissions.filter {
-            $0.isProcessingPending && !$0.hasRemoteBatchInFlight && $0.batchStage == .regrading
+            $0.isProcessingPending && !$0.hasRemoteBatchReservation && $0.batchStage == .regrading
         }
         guard !queued.isEmpty else { return }
 
+        var reservedSubmissions: [StudentSubmission] = []
         let inputs = queued.compactMap { submission -> OpenAIBatchRegradeInput? in
             guard
                 let pageFileURLs = ensureSubmissionScanFileURLs(for: submission),
@@ -2199,6 +2213,8 @@ struct SessionDetailView: View {
             }
             let requestID = "regrade-\(submission.id.uuidString)-\(UUID().uuidString)"
             submission.remoteBatchRequestID = requestID
+            submission.processingDetail = "Preparing regrade pass \(submission.currentBatchAttemptNumber) batch submission."
+            reservedSubmissions.append(submission)
             return OpenAIBatchRegradeInput(
                 customID: requestID,
                 pageFileURLs: pageFileURLs,
@@ -2207,18 +2223,28 @@ struct SessionDetailView: View {
             )
         }
         guard !inputs.isEmpty else { return }
+        try? modelContext.save()
 
-        let creation = try await OpenAIService.shared.createSubmissionRegradingBatch(
-            apiKey: apiKey,
-            modelID: session.gradingModelID,
-            rubric: session.sortedQuestions.map(\.snapshot),
-            overallRules: session.overallGradingRules,
-            submissions: inputs,
-            integerPointsOnly: session.integerPointsOnlyEnabled,
-            relaxedGradingMode: session.relaxedGradingModeEnabled,
-            reasoningEffort: session.gradingReasoningEffort,
-            verbosity: session.gradingVerbosity
-        )
+        let creation: OpenAIBatchCreationResult
+        do {
+            creation = try await OpenAIService.shared.createSubmissionRegradingBatch(
+                apiKey: apiKey,
+                modelID: session.gradingModelID,
+                rubric: session.sortedQuestions.map(\.snapshot),
+                overallRules: session.overallGradingRules,
+                submissions: inputs,
+                integerPointsOnly: session.integerPointsOnlyEnabled,
+                relaxedGradingMode: session.relaxedGradingModeEnabled,
+                reasoningEffort: session.gradingReasoningEffort,
+                verbosity: session.gradingVerbosity
+            )
+        } catch {
+            for submission in reservedSubmissions {
+                submission.remoteBatchRequestID = nil
+            }
+            try? modelContext.save()
+            throw error
+        }
 
         for submission in queued where submission.remoteBatchRequestID != nil {
             submission.remoteBatchID = creation.batchID
@@ -2581,7 +2607,7 @@ struct SessionDetailView: View {
     }
 
     private var hasActivePendingBatchRequests: Bool {
-        session.submissions.contains(where: \.hasRemoteBatchInFlight)
+        session.submissions.contains(where: \.hasRemoteBatchReservation)
     }
 
     private var filteredSubmissions: [StudentSubmission] {
