@@ -395,6 +395,14 @@ struct SessionDetailView: View {
                 try? await Task.sleep(nanoseconds: 12_000_000_000)
             }
         }
+        .task(id: pendingBatchPollingID) {
+            guard !pendingBatchPollingID.isEmpty else { return }
+            while !Task.isCancelled && hasRefreshablePendingBatchSubmissions {
+                await refreshPendingBatchSubmissions(force: false)
+                guard hasRefreshablePendingBatchSubmissions else { break }
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+            }
+        }
         .overlay {
             if let overlayState = busyState ?? preparingState {
                 BusyOverlay(state: overlayState)
@@ -1768,7 +1776,7 @@ struct SessionDetailView: View {
         if
             !force,
             let lastPendingBatchRefreshAt,
-            Date.now.timeIntervalSince(lastPendingBatchRefreshAt) < 15
+            Date.now.timeIntervalSince(lastPendingBatchRefreshAt) < 8
         {
             return
         }
@@ -2561,6 +2569,15 @@ struct SessionDetailView: View {
 
     private var pendingRubricPollingID: String {
         session.hasPendingRubricGeneration ? (session.rubricRemoteBatchID ?? "") : ""
+    }
+
+    private var pendingBatchPollingID: String {
+        guard hasRefreshablePendingBatchSubmissions else { return "" }
+        let ids = session.submissions
+            .filter(\.isAwaitingRemoteProcessing)
+            .map(\.id.uuidString)
+            .sorted()
+        return ids.joined(separator: "|")
     }
 
     private var hasActivePendingBatchRequests: Bool {
