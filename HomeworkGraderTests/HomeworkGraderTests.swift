@@ -1,4 +1,5 @@
 import XCTest
+import SwiftData
 @testable import HomeworkGrader
 
 final class HomeworkGraderTests: XCTestCase {
@@ -33,13 +34,25 @@ final class HomeworkGraderTests: XCTestCase {
     }
 
     func testCSVExporterIncludesPerQuestionScores() throws {
+        let container = try ModelContainer(
+            for: GradingSession.self,
+            QuestionRubric.self,
+            StudentSubmission.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = ModelContext(container)
+
         let session = GradingSession(
             title: "Biology Test",
             answerModelID: "gpt-5.4",
             gradingModelID: "gpt-5.4-mini"
         )
-        let q1 = QuestionRubric(orderIndex: 0, questionID: "q1", displayLabel: "Q1", promptText: "Cell", idealAnswer: "Cell", gradingCriteria: "Name the organelle.", maxPoints: 2, session: session)
-        let q2 = QuestionRubric(orderIndex: 1, questionID: "q2", displayLabel: "Q2", promptText: "DNA", idealAnswer: "DNA", gradingCriteria: "Define DNA.", maxPoints: 3, session: session)
+        context.insert(session)
+
+        let q1 = QuestionRubric(orderIndex: 0, questionID: "q1", displayLabel: "Q1", promptText: "Cell", idealAnswer: "Cell", gradingCriteria: "Name the organelle.", maxPoints: 2)
+        let q2 = QuestionRubric(orderIndex: 1, questionID: "q2", displayLabel: "Q2", promptText: "DNA", idealAnswer: "DNA", gradingCriteria: "Define DNA.", maxPoints: 3)
+        context.insert(q1)
+        context.insert(q2)
         session.questions = [q1, q2]
 
         let submission = StudentSubmission(
@@ -47,14 +60,15 @@ final class HomeworkGraderTests: XCTestCase {
             overallNotes: "Good work",
             teacherReviewed: true,
             totalScore: 4,
-            maxScore: 5,
-            session: session
+            maxScore: 5
         )
+        context.insert(submission)
         submission.setQuestionGrades([
             QuestionGradeRecord(questionID: "q1", displayLabel: "Q1", awardedPoints: 2, maxPoints: 2, isAnswerCorrect: true, isProcessCorrect: true, feedback: "Correct", needsReview: false),
             QuestionGradeRecord(questionID: "q2", displayLabel: "Q2", awardedPoints: 2, maxPoints: 3, isAnswerCorrect: false, isProcessCorrect: true, feedback: "Missing detail", needsReview: true),
         ])
         session.submissions = [submission]
+        try context.save()
 
         let csv = CSVExporter.csvString(for: session)
 

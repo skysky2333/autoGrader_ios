@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		A10000010000000000000001 /* HomeworkGraderApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000110000000000000001 /* HomeworkGraderApp.swift */; };
 		A10000020000000000000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000120000000000000001 /* ContentView.swift */; };
-		A10000030000000000000001 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000130000000000000001 /* Models.swift */; };
 		A10000040000000000000001 /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000140000000000000001 /* OpenAIService.swift */; };
 		A10000050000000000000001 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000150000000000000001 /* AppSettings.swift */; };
 		A10000060000000000000001 /* DocumentScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000160000000000000001 /* DocumentScanner.swift */; };
@@ -18,13 +17,27 @@
 		A10000090000000000000001 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A100001A0000000000000001 /* LaunchScreen.storyboard */; };
 		B10000010000000000000001 /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000110000000000000001 /* SessionDetailView.swift */; };
 		B10000020000000000000001 /* SubmissionProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000120000000000000001 /* SubmissionProcessing.swift */; };
-		B10000030000000000000001 /* ReviewViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000130000000000000001 /* ReviewViews.swift */; };
 		B10000040000000000000001 /* SharedComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000140000000000000001 /* SharedComponents.swift */; };
 		B10000050000000000000001 /* RenderedContentViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000150000000000000001 /* RenderedContentViews.swift */; };
 		B10000060000000000000001 /* GradingDomain.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000160000000000000001 /* GradingDomain.swift */; };
 		B10000070000000000000001 /* SessionExporters.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000170000000000000001 /* SessionExporters.swift */; };
 		B10000080000000000000001 /* Notifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000180000000000000001 /* Notifications.swift */; };
 		B10000090000000000000001 /* BackgroundBatchRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000190000000000000001 /* BackgroundBatchRefresh.swift */; };
+		C10000010000000000000001 /* SubmissionArchiveStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000110000000000000001 /* SubmissionArchiveStorage.swift */; };
+		C10000020000000000000001 /* ModelCatalogs.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000120000000000000001 /* ModelCatalogs.swift */; };
+		C10000060000000000000001 /* AnswerKeyReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000160000000000000001 /* AnswerKeyReviewView.swift */; };
+		C10000070000000000000001 /* SubmissionReviewViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000170000000000000001 /* SubmissionReviewViews.swift */; };
+		C10000080000000000000001 /* SavedSubmissionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000180000000000000001 /* SavedSubmissionDetailView.swift */; };
+		C10000090000000000000001 /* RubricEditors.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000190000000000000001 /* RubricEditors.swift */; };
+		C100000A0000000000000001 /* OpenAIServiceTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C100001A0000000000000001 /* OpenAIServiceTypes.swift */; };
+		C100000B0000000000000001 /* OpenAIServiceDefinitions.swift in Sources */ = {isa = PBXBuildFile; fileRef = C100001B0000000000000001 /* OpenAIServiceDefinitions.swift */; };
+		C100000C0000000000000001 /* OpenAIServiceTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C100001C0000000000000001 /* OpenAIServiceTransport.swift */; };
+		C100000D0000000000000001 /* OpenAIServiceBatching.swift in Sources */ = {isa = PBXBuildFile; fileRef = C100001D0000000000000001 /* OpenAIServiceBatching.swift */; };
+		D10000010000000000000001 /* SessionDetailView+Tabs.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000110000000000000001 /* SessionDetailView+Tabs.swift */; };
+		D10000020000000000000001 /* SessionDetailView+Capture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000120000000000000001 /* SessionDetailView+Capture.swift */; };
+		D10000030000000000000001 /* SessionDetailView+Batching.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000130000000000000001 /* SessionDetailView+Batching.swift */; };
+		D10000040000000000000001 /* SessionDetailView+State.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000140000000000000001 /* SessionDetailView+State.swift */; };
+		E10000010000000000000001 /* PersistentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000110000000000000001 /* PersistentModels.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -41,7 +54,6 @@
 		A10000100000000000000001 /* HomeworkGrader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HomeworkGrader.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000110000000000000001 /* HomeworkGraderApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeworkGraderApp.swift; sourceTree = "<group>"; };
 		A10000120000000000000001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		A10000130000000000000001 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		A10000140000000000000001 /* OpenAIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIService.swift; sourceTree = "<group>"; };
 		A10000150000000000000001 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		A10000160000000000000001 /* DocumentScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentScanner.swift; sourceTree = "<group>"; };
@@ -51,13 +63,27 @@
 		A100001A0000000000000001 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		B10000110000000000000001 /* SessionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDetailView.swift; sourceTree = "<group>"; };
 		B10000120000000000000001 /* SubmissionProcessing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubmissionProcessing.swift; sourceTree = "<group>"; };
-		B10000130000000000000001 /* ReviewViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewViews.swift; sourceTree = "<group>"; };
 		B10000140000000000000001 /* SharedComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedComponents.swift; sourceTree = "<group>"; };
 		B10000150000000000000001 /* RenderedContentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenderedContentViews.swift; sourceTree = "<group>"; };
 		B10000160000000000000001 /* GradingDomain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradingDomain.swift; sourceTree = "<group>"; };
 		B10000170000000000000001 /* SessionExporters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionExporters.swift; sourceTree = "<group>"; };
 		B10000180000000000000001 /* Notifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Notifications.swift; sourceTree = "<group>"; };
 		B10000190000000000000001 /* BackgroundBatchRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundBatchRefresh.swift; sourceTree = "<group>"; };
+		C10000110000000000000001 /* SubmissionArchiveStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubmissionArchiveStorage.swift; sourceTree = "<group>"; };
+		C10000120000000000000001 /* ModelCatalogs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelCatalogs.swift; sourceTree = "<group>"; };
+		C10000160000000000000001 /* AnswerKeyReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnswerKeyReviewView.swift; sourceTree = "<group>"; };
+		C10000170000000000000001 /* SubmissionReviewViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubmissionReviewViews.swift; sourceTree = "<group>"; };
+		C10000180000000000000001 /* SavedSubmissionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedSubmissionDetailView.swift; sourceTree = "<group>"; };
+		C10000190000000000000001 /* RubricEditors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RubricEditors.swift; sourceTree = "<group>"; };
+		C100001A0000000000000001 /* OpenAIServiceTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIServiceTypes.swift; sourceTree = "<group>"; };
+		C100001B0000000000000001 /* OpenAIServiceDefinitions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIServiceDefinitions.swift; sourceTree = "<group>"; };
+		C100001C0000000000000001 /* OpenAIServiceTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIServiceTransport.swift; sourceTree = "<group>"; };
+		C100001D0000000000000001 /* OpenAIServiceBatching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIServiceBatching.swift; sourceTree = "<group>"; };
+		D10000110000000000000001 /* SessionDetailView+Tabs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SessionDetailView+Tabs.swift"; sourceTree = "<group>"; };
+		D10000120000000000000001 /* SessionDetailView+Capture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SessionDetailView+Capture.swift"; sourceTree = "<group>"; };
+		D10000130000000000000001 /* SessionDetailView+Batching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SessionDetailView+Batching.swift"; sourceTree = "<group>"; };
+		D10000140000000000000001 /* SessionDetailView+State.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SessionDetailView+State.swift"; sourceTree = "<group>"; };
+		E10000110000000000000001 /* PersistentModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistentModels.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -92,15 +118,28 @@
 			children = (
 				A10000110000000000000001 /* HomeworkGraderApp.swift */,
 				A10000120000000000000001 /* ContentView.swift */,
-				A10000130000000000000001 /* Models.swift */,
+				C10000120000000000000001 /* ModelCatalogs.swift */,
+				C10000110000000000000001 /* SubmissionArchiveStorage.swift */,
+				E10000110000000000000001 /* PersistentModels.swift */,
 				B10000160000000000000001 /* GradingDomain.swift */,
 				A10000140000000000000001 /* OpenAIService.swift */,
+				C100001A0000000000000001 /* OpenAIServiceTypes.swift */,
+				C100001B0000000000000001 /* OpenAIServiceDefinitions.swift */,
+				C100001C0000000000000001 /* OpenAIServiceTransport.swift */,
+				C100001D0000000000000001 /* OpenAIServiceBatching.swift */,
 				B10000170000000000000001 /* SessionExporters.swift */,
 				A10000150000000000000001 /* AppSettings.swift */,
 				A10000160000000000000001 /* DocumentScanner.swift */,
 				B10000110000000000000001 /* SessionDetailView.swift */,
+				D10000110000000000000001 /* SessionDetailView+Tabs.swift */,
+				D10000120000000000000001 /* SessionDetailView+Capture.swift */,
+				D10000130000000000000001 /* SessionDetailView+Batching.swift */,
+				D10000140000000000000001 /* SessionDetailView+State.swift */,
+				C10000160000000000000001 /* AnswerKeyReviewView.swift */,
+				C10000170000000000000001 /* SubmissionReviewViews.swift */,
+				C10000180000000000000001 /* SavedSubmissionDetailView.swift */,
+				C10000190000000000000001 /* RubricEditors.swift */,
 				B10000120000000000000001 /* SubmissionProcessing.swift */,
-				B10000130000000000000001 /* ReviewViews.swift */,
 				B10000140000000000000001 /* SharedComponents.swift */,
 				B10000150000000000000001 /* RenderedContentViews.swift */,
 				B10000180000000000000001 /* Notifications.swift */,
@@ -229,20 +268,33 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000050000000000000001 /* AppSettings.swift in Sources */,
+				C10000060000000000000001 /* AnswerKeyReviewView.swift in Sources */,
+				B10000090000000000000001 /* BackgroundBatchRefresh.swift in Sources */,
 				A10000020000000000000001 /* ContentView.swift in Sources */,
 				A10000060000000000000001 /* DocumentScanner.swift in Sources */,
 				B10000060000000000000001 /* GradingDomain.swift in Sources */,
 				A10000010000000000000001 /* HomeworkGraderApp.swift in Sources */,
-				A10000030000000000000001 /* Models.swift in Sources */,
-				B10000090000000000000001 /* BackgroundBatchRefresh.swift in Sources */,
+				C10000020000000000000001 /* ModelCatalogs.swift in Sources */,
 				B10000080000000000000001 /* Notifications.swift in Sources */,
 				A10000040000000000000001 /* OpenAIService.swift in Sources */,
+				C100000D0000000000000001 /* OpenAIServiceBatching.swift in Sources */,
+				C100000B0000000000000001 /* OpenAIServiceDefinitions.swift in Sources */,
+				C100000C0000000000000001 /* OpenAIServiceTransport.swift in Sources */,
+				C100000A0000000000000001 /* OpenAIServiceTypes.swift in Sources */,
+				E10000010000000000000001 /* PersistentModels.swift in Sources */,
 				B10000050000000000000001 /* RenderedContentViews.swift in Sources */,
-				B10000030000000000000001 /* ReviewViews.swift in Sources */,
+				C10000090000000000000001 /* RubricEditors.swift in Sources */,
+				C10000080000000000000001 /* SavedSubmissionDetailView.swift in Sources */,
 				B10000070000000000000001 /* SessionExporters.swift in Sources */,
 				B10000010000000000000001 /* SessionDetailView.swift in Sources */,
+				D10000030000000000000001 /* SessionDetailView+Batching.swift in Sources */,
+				D10000020000000000000001 /* SessionDetailView+Capture.swift in Sources */,
+				D10000040000000000000001 /* SessionDetailView+State.swift in Sources */,
+				D10000010000000000000001 /* SessionDetailView+Tabs.swift in Sources */,
 				B10000040000000000000001 /* SharedComponents.swift in Sources */,
 				B10000020000000000000001 /* SubmissionProcessing.swift in Sources */,
+				C10000010000000000000001 /* SubmissionArchiveStorage.swift in Sources */,
+				C10000070000000000000001 /* SubmissionReviewViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

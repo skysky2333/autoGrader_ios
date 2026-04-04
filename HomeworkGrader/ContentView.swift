@@ -146,7 +146,7 @@ private struct NewSessionSheet: View {
     @State private var validationModel = ModelCatalog.defaultValidationModel
     @State private var integerPointsOnly = true
     @State private var relaxedGradingMode = false
-    @State private var answerReasoningEffort: String? = "xhigh"
+    @State private var answerReasoningEffort: String? = "high"
     @State private var gradingReasoningEffort: String? = "high"
     @State private var validationReasoningEffort: String? = "high"
     @State private var answerVerbosity: String? = nil
