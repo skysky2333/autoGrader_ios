@@ -2,3 +2,5 @@ output/
 __pycache__/
 tests/__pycache__/
 canvas_connect/__pycache__/
+
+config.toml

@@ -146,7 +146,7 @@ struct SubmissionRow: View {
             }
 
             if submission.nameNeedsReviewEnabled {
-                StatusChip(label: "Name Review", color: .orange)
+                StatusChip(label: "Name Review", color: .green)
             }
 
             if submission.isProcessingCompleted && submission.hasQuestionNeedingReview {
@@ -367,7 +367,7 @@ struct SubmissionDraftSummaryRow: View {
             }
 
             if draft.nameNeedsReview {
-                StatusChip(label: "Name Review", color: .orange)
+                StatusChip(label: "Name Review", color: .green)
             }
 
             if draft.grades.contains(where: \.needsReview) {

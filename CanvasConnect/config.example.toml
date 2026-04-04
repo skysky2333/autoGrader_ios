@@ -1,3 +1,7 @@
+export_paths = [
+  "/Users/you/Downloads/grading/files/Quiz2v3-2026-04-04T15-39-30Z",
+]
+
 canvas_base_url = "https://school.instructure.com"
 course_id = 12345
 assignment_id = 67890

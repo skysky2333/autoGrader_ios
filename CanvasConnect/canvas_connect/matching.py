@@ -52,6 +52,7 @@ def build_match_manifest(
                 total_score=submission.total_score,
                 max_score=submission.max_score,
                 pdf_path=submission.pdf_path,
+                first_scan_path=submission.scan_paths[0] if submission.scan_paths else "",
                 name_needs_review=submission.name_needs_review,
                 teacher_reviewed=submission.teacher_reviewed,
                 status=status,
@@ -88,6 +89,22 @@ def rank_candidates(local_name: str, roster: list[CanvasStudent]) -> list[MatchC
             )
         )
     return sorted(scored, key=lambda candidate: (-candidate.score, candidate.name.casefold(), candidate.user_id))
+
+
+def classify_match(
+    local_name: str,
+    top_candidate: MatchCandidate,
+    runner_up_score: int | None,
+    requires_review: bool,
+    config: CanvasConnectConfig,
+) -> tuple[str, str]:
+    return _classify_match(
+        top_candidate=top_candidate,
+        runner_up_score=runner_up_score,
+        local_name=local_name,
+        requires_review=requires_review,
+        config=config,
+    )
 
 
 def score_name_match(left: str, right: str) -> tuple[int, str]:
@@ -162,6 +179,7 @@ def write_match_manifest(records: list[MatchRecord], json_path: Path, csv_path: 
         "reviewer_decision",
         "reviewer_selected_user_id",
         "reviewer_note",
+        "first_scan_path",
         "pdf_path",
     ]
     with csv_path.open("w", encoding="utf-8", newline="") as handle:
@@ -184,6 +202,7 @@ def write_match_manifest(records: list[MatchRecord], json_path: Path, csv_path: 
                 "reviewer_decision": record.reviewer_decision,
                 "reviewer_selected_user_id": record.reviewer_selected_user_id or "",
                 "reviewer_note": record.reviewer_note,
+                "first_scan_path": record.first_scan_path,
                 "pdf_path": record.pdf_path,
             }
             for index in range(3):
@@ -220,6 +239,7 @@ def write_locked_manifest(records: list[LockedMatchRecord], json_path: Path, csv
         "source_status",
         "source_reason",
         "reviewer_note",
+        "first_scan_path",
         "pdf_path",
     ]
     with csv_path.open("w", encoding="utf-8", newline="") as handle:
@@ -241,6 +261,7 @@ def write_locked_manifest(records: list[LockedMatchRecord], json_path: Path, csv
                     "source_status": record.source_status,
                     "source_reason": record.source_reason,
                     "reviewer_note": record.reviewer_note,
+                    "first_scan_path": record.first_scan_path,
                     "pdf_path": record.pdf_path,
                 }
             )
@@ -273,20 +294,12 @@ def _classify_match(
     requires_review: bool,
     config: CanvasConnectConfig,
 ) -> tuple[str, str]:
-    if requires_review:
-        return "needs_review", "name_needs_review"
-
-    local_norm = normalize_name(local_name)
-    matched_norm = normalize_name(top_candidate.name)
-    if local_norm == matched_norm or top_candidate.reason.startswith("exact_"):
-        return "auto", top_candidate.reason
-
     margin = top_candidate.score - (runner_up_score or 0)
-    if top_candidate.score >= config.match_auto_accept_score and margin >= config.match_margin:
+    if top_candidate.score > config.match_auto_accept_score and margin >= config.match_margin:
         return "auto", top_candidate.reason
-    if top_candidate.score >= config.match_review_floor:
-        return "needs_review", top_candidate.reason
-    return "unmatched", top_candidate.reason
+    if top_candidate.score > config.match_review_floor and not requires_review and margin >= config.match_margin:
+        return "auto", top_candidate.reason
+    return "needs_review", "name_needs_review" if requires_review else top_candidate.reason
 
 
 def _flag_duplicate_auto_matches(records: list[MatchRecord]) -> None:

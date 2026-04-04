@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import tomllib
 
 
 @dataclass
 class CanvasConnectConfig:
+    export_paths: list[str] = field(default_factory=list)
     canvas_base_url: str = ""
     course_id: int | None = None
     assignment_id: int | None = None
@@ -28,6 +29,7 @@ class CanvasConnectConfig:
         with path.open("rb") as handle:
             payload = tomllib.load(handle)
         return cls(
+            export_paths=_load_export_paths(payload),
             canvas_base_url=payload.get("canvas_base_url", ""),
             course_id=payload.get("course_id"),
             assignment_id=payload.get("assignment_id"),
@@ -42,3 +44,13 @@ class CanvasConnectConfig:
             enforce_manual_post_policy=bool(payload.get("enforce_manual_post_policy", True)),
             request_timeout_seconds=int(payload.get("request_timeout_seconds", 60)),
         )
+
+
+def _load_export_paths(payload: dict) -> list[str]:
+    export_paths = payload.get("export_paths")
+    if export_paths is None:
+        export_path = payload.get("export_path")
+        if export_path:
+            return [str(export_path)]
+        return []
+    return [str(path) for path in export_paths]

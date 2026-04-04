@@ -6,6 +6,7 @@ import mimetypes
 import os
 from pathlib import Path
 import re
+import time
 import urllib.parse
 import urllib.request
 from urllib.error import HTTPError
@@ -108,6 +109,66 @@ class CanvasAPI:
             },
         )
         return payload
+
+    def grade_submission(
+        self,
+        course_id: int,
+        assignment_id: int,
+        user_id: int,
+        posted_grade: str,
+    ) -> dict:
+        payload, _, _ = self._request_json(
+            "PUT",
+            self._build_url(
+                f"/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/{user_id}"
+            ),
+            form={
+                "submission[posted_grade]": posted_grade,
+                "prefer_points_over_scheme": "true",
+            },
+        )
+        return payload
+
+    def update_assignment_grades(
+        self,
+        course_id: int,
+        assignment_id: int,
+        grade_map: dict[int, str],
+    ) -> dict:
+        form: dict[str, str] = {}
+        for student_id, grade in grade_map.items():
+            form[f"grade_data[{student_id}][posted_grade]"] = grade
+        payload, _, _ = self._request_json(
+            "POST",
+            self._build_url(
+                f"/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/update_grades"
+            ),
+            form=form,
+        )
+        return payload
+
+    def get_progress(self, progress_id: int) -> dict:
+        payload, _, _ = self._request_json(
+            "GET",
+            self._build_url(f"/api/v1/progress/{progress_id}"),
+        )
+        return payload
+
+    def wait_for_progress(
+        self,
+        progress_id: int,
+        poll_interval_seconds: float = 1.5,
+        timeout_seconds: int = 300,
+    ) -> dict:
+        started = time.monotonic()
+        while True:
+            payload = self.get_progress(progress_id)
+            state = payload.get("workflow_state")
+            if state in {"completed", "failed"}:
+                return payload
+            if time.monotonic() - started > timeout_seconds:
+                raise CanvasAPIError(f"Timed out waiting for Canvas progress job {progress_id}.")
+            time.sleep(poll_interval_seconds)
 
     def _request_json(
         self,

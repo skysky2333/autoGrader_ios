@@ -39,6 +39,30 @@ class CSVToolsTests(unittest.TestCase):
         self.assertEqual(roster[0].user_id, 101)
         self.assertEqual(roster[0].login_id, "alice")
 
+    def test_load_gradebook_roster_supports_student_header(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = Path(temp_dir) / "gradebook.csv"
+            with csv_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(
+                    handle,
+                    fieldnames=["Student", "ID", "SIS Login ID", "Section", "Quiz 2"],
+                )
+                writer.writeheader()
+                writer.writerow(
+                    {
+                        "Student": "Alice Smith",
+                        "ID": "101",
+                        "SIS Login ID": "alice",
+                        "Section": "001",
+                        "Quiz 2": "",
+                    }
+                )
+            roster = load_gradebook_roster(csv_path)
+
+        self.assertEqual(len(roster), 1)
+        self.assertEqual(roster[0].name, "Alice Smith")
+        self.assertEqual(roster[0].user_id, 101)
+
     def test_build_grade_import_updates_only_matched_rows(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             template_path = Path(temp_dir) / "template.csv"
@@ -63,6 +87,7 @@ class CSVToolsTests(unittest.TestCase):
                         total_score=9,
                         max_score=10,
                         pdf_path="/tmp/alice.pdf",
+                        first_scan_path="/tmp/alice-page-1.jpg",
                         final_status="matched",
                         final_user_id=101,
                         final_student_name="Alice Smith",
@@ -73,6 +98,7 @@ class CSVToolsTests(unittest.TestCase):
                         total_score=7,
                         max_score=10,
                         pdf_path="/tmp/ghost.pdf",
+                        first_scan_path="/tmp/ghost-page-1.jpg",
                         final_status="skipped",
                         final_user_id=None,
                         final_student_name=None,

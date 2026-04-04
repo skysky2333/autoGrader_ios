@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 from csv import DictWriter
+from dataclasses import replace
 from datetime import datetime, timezone
 import json
-import os
 from pathlib import Path
 
 from .api import CanvasAPI, CanvasAPIError, token_from_env
 from .config import CanvasConnectConfig
 from .csv_tools import build_grade_import_csv, load_gradebook_roster
-from .export_parser import inspect_export, load_local_dataset
+from .export_parser import ensure_unique_student_names, inspect_exports, load_local_dataset
 from .matching import (
     build_match_manifest,
+    classify_match,
     load_locked_manifest,
     load_match_manifest,
+    rank_candidates,
     summarize_locked_records,
     summarize_match_records,
     write_locked_manifest,
@@ -21,16 +23,22 @@ from .matching import (
 from .models import CanvasStudent, LockedMatchRecord, MatchRecord, UploadResult
 
 
-def make_run_dir(output_root: Path, export_path: Path) -> Path:
+def make_run_dir(output_root: Path, export_paths: list[Path]) -> Path:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    run_dir = output_root / f"{export_path.name}__{timestamp}"
+    if not export_paths:
+        raise ValueError("At least one export path is required to create a run directory.")
+    label = export_paths[0].name if len(export_paths) == 1 else f"combined-{len(export_paths)}-{export_paths[0].name}"
+    run_dir = output_root / f"{label}__{timestamp}"
     run_dir.mkdir(parents=True, exist_ok=True)
     return run_dir
 
 
-def inspect_export_step(export_path: Path, run_dir: Path) -> Path:
-    dataset = inspect_export(export_path, run_dir)
-    print(f"Inspected export '{dataset.title}' with {len(dataset.submissions)} submissions.")
+def inspect_export_step(export_paths: list[Path], run_dir: Path) -> Path:
+    dataset = inspect_exports(export_paths, run_dir)
+    print(
+        f"Inspected {len(export_paths)} export(s) for '{dataset.title}' "
+        f"with {len(dataset.submissions)} submissions."
+    )
     return run_dir / "inspect" / "local_dataset.json"
 
 
@@ -79,30 +87,48 @@ def match_step(local_dataset_path: Path, roster_path: Path, config: CanvasConnec
 def review_matches_step(
     manifest_path: Path,
     roster_path: Path,
+    config: CanvasConnectConfig,
     run_dir: Path,
     assume_yes: bool = False,
 ) -> Path:
     records = load_match_manifest(manifest_path)
-    roster = {student.user_id: student for student in load_roster_json(roster_path)}
+    roster_list = load_roster_json(roster_path)
+    roster = {student.user_id: student for student in roster_list}
     locked_records: list[LockedMatchRecord] = []
+    selected_claims: dict[int, str] = {}
+    current_local_names = {record.local_submission_id: record.local_student_name for record in records}
+    ensure_unique_student_names(list(current_local_names.values()), context="match review initialization")
 
     for record in records:
         if record.status == "auto" and not assume_yes:
-            locked_records.append(_lock_from_record(record, record.matched_user_id, roster, "auto accepted"))
+            locked = _lock_from_record(record, record.matched_user_id, roster, "auto accepted")
+            locked_records.append(locked)
+            if locked.final_status == "matched" and locked.final_user_id is not None:
+                selected_claims[locked.final_user_id] = locked.local_student_name
             continue
 
         if record.status == "auto" and assume_yes:
-            locked_records.append(_lock_from_record(record, record.matched_user_id, roster, "auto accepted"))
+            locked = _lock_from_record(record, record.matched_user_id, roster, "auto accepted")
+            locked_records.append(locked)
+            if locked.final_status == "matched" and locked.final_user_id is not None:
+                selected_claims[locked.final_user_id] = locked.local_student_name
             continue
 
         if assume_yes:
             if record.status in {"needs_review", "duplicate_candidate"} and record.candidates:
-                locked_records.append(_lock_from_record(record, record.candidates[0].user_id, roster, "accepted top candidate with --yes"))
+                locked = _lock_from_record(record, record.candidates[0].user_id, roster, "accepted top candidate with --yes")
             else:
-                locked_records.append(_lock_skipped(record, "skipped with --yes"))
+                locked = _lock_skipped(record, "skipped with --yes")
+            locked_records.append(locked)
+            if locked.final_status == "matched" and locked.final_user_id is not None:
+                selected_claims[locked.final_user_id] = locked.local_student_name
             continue
 
-        locked_records.append(_prompt_for_record(record, roster))
+        locked = _prompt_for_record(record, roster_list, roster, selected_claims, current_local_names, config)
+        locked_records.append(locked)
+        current_local_names[locked.local_submission_id] = locked.local_student_name
+        if locked.final_status == "matched" and locked.final_user_id is not None:
+            selected_claims[locked.final_user_id] = locked.local_student_name
 
     locked_dir = run_dir / "match"
     locked_dir.mkdir(parents=True, exist_ok=True)
@@ -130,6 +156,101 @@ def build_grade_csv_step(
     stats = build_grade_import_csv(gradebook_csv_path, output_path, assignment_column, locked_records)
     print(f"Generated Gradebook CSV with {stats['updated_rows']} updated student rows.")
     return output_path
+
+
+def post_grades_step(
+    locked_manifest_path: Path,
+    config: CanvasConnectConfig,
+    run_dir: Path,
+    use_bulk_endpoint: bool = True,
+) -> Path:
+    if not (config.canvas_base_url and config.course_id and config.assignment_id):
+        raise ValueError("Canvas API grading requires canvas_base_url, course_id, and assignment_id in config.")
+
+    token = token_from_env(config.token_env_var)
+    client = CanvasAPI(config.canvas_base_url, token, config.request_timeout_seconds)
+    assignment = client.get_assignment(config.course_id, config.assignment_id)
+    validate_assignment_for_upload(assignment, config)
+
+    if config.enforce_manual_post_policy:
+        client.update_assignment(
+            config.course_id,
+            config.assignment_id,
+            {"assignment[post_manually]": "true"},
+        )
+
+    locked_records = load_locked_manifest(locked_manifest_path)
+    matched = [
+        record
+        for record in locked_records
+        if record.final_status == "matched" and record.final_user_id is not None
+    ]
+
+    grades_dir = run_dir / "grades_api"
+    grades_dir.mkdir(parents=True, exist_ok=True)
+
+    if use_bulk_endpoint:
+        grade_map = {int(record.final_user_id): format_points(record.total_score) for record in matched}
+        progress_payload = client.update_assignment_grades(
+            config.course_id,
+            config.assignment_id,
+            grade_map,
+        )
+        final_progress = progress_payload
+        if progress_payload.get("id") is not None:
+            final_progress = client.wait_for_progress(int(progress_payload["id"]))
+        output = {
+            "mode": "bulk",
+            "initial_progress": progress_payload,
+            "final_progress": final_progress,
+            "record_count": len(matched),
+        }
+        json_path = grades_dir / "grade_post_results.json"
+        _write_json(json_path, output)
+        print(
+            f"Posted {len(matched)} grades through Canvas API "
+            f"(progress state: {final_progress.get('workflow_state', 'unknown')})."
+        )
+        return json_path
+
+    results: list[dict[str, str | int]] = []
+    for record in matched:
+        try:
+            payload = client.grade_submission(
+                config.course_id,
+                config.assignment_id,
+                int(record.final_user_id),
+                format_points(record.total_score),
+            )
+            results.append(
+                {
+                    "local_submission_id": record.local_submission_id,
+                    "user_id": int(record.final_user_id),
+                    "student_name": record.final_student_name or "",
+                    "status": "graded",
+                    "score": format_points(record.total_score),
+                    "returned_score": payload.get("score", ""),
+                }
+            )
+        except CanvasAPIError as error:
+            results.append(
+                {
+                    "local_submission_id": record.local_submission_id,
+                    "user_id": int(record.final_user_id),
+                    "student_name": record.final_student_name or "",
+                    "status": "failed",
+                    "score": format_points(record.total_score),
+                    "message": str(error),
+                }
+            )
+
+    json_path = grades_dir / "grade_post_results.json"
+    _write_json(json_path, results)
+    print(
+        "Grade API results: "
+        + ", ".join(f"{key}={value}" for key, value in summarize_status_rows(results).items())
+    )
+    return json_path
 
 
 def upload_submissions_step(
@@ -232,18 +353,19 @@ def upload_submissions_step(
 
 
 def run_pipeline(
-    export_path: Path,
+    export_paths: list[Path],
     config: CanvasConnectConfig,
     gradebook_csv: Path | None = None,
     assignment_column: str | None = None,
+    grade_via_api: bool = False,
     upload_submissions: bool = True,
     assume_yes: bool = False,
 ) -> dict[str, str]:
     output_root = Path(config.output_root)
-    run_dir = make_run_dir(output_root, export_path)
+    run_dir = make_run_dir(output_root, export_paths)
     artifacts: dict[str, str] = {"run_dir": str(run_dir)}
 
-    local_dataset_path = inspect_export_step(export_path, run_dir)
+    local_dataset_path = inspect_export_step(export_paths, run_dir)
     artifacts["local_dataset"] = str(local_dataset_path)
 
     roster_path = load_roster_step(config, run_dir, gradebook_csv)
@@ -255,7 +377,7 @@ def run_pipeline(
     if not assume_yes and not confirm("Continue to interactive match review? [Y/n]: ", default_yes=True):
         raise RuntimeError("Cancelled before match review.")
 
-    locked_manifest_path = review_matches_step(manifest_path, roster_path, run_dir, assume_yes=assume_yes)
+    locked_manifest_path = review_matches_step(manifest_path, roster_path, config, run_dir, assume_yes=assume_yes)
     artifacts["locked_manifest"] = str(locked_manifest_path)
 
     if gradebook_csv is not None:
@@ -266,6 +388,11 @@ def run_pipeline(
             raise RuntimeError("Cancelled before grade CSV generation.")
         grade_csv_path = build_grade_csv_step(locked_manifest_path, gradebook_csv, chosen_assignment_column, run_dir)
         artifacts["grade_csv"] = str(grade_csv_path)
+    elif grade_via_api:
+        if not assume_yes and not confirm("Post grades directly to Canvas through the API now? [Y/n]: ", default_yes=True):
+            raise RuntimeError("Cancelled before API grade posting.")
+        grade_results_path = post_grades_step(locked_manifest_path, config, run_dir)
+        artifacts["grade_api_results"] = str(grade_results_path)
 
     if upload_submissions:
         upload_path = upload_submissions_step(locked_manifest_path, config, run_dir, assume_yes=assume_yes)
@@ -325,53 +452,161 @@ def summarize_uploads(results: list[UploadResult]) -> dict[str, int]:
     return summary
 
 
-def _prompt_for_record(record: MatchRecord, roster: dict[int, CanvasStudent]) -> LockedMatchRecord:
-    print()
-    print(f"Resolve: {record.local_student_name} [{record.status}, {record.reason}]")
-    print(f"  score: {record.total_score}/{record.max_score}")
-    if record.name_needs_review:
-        print("  note: local export flagged the handwritten name for review.")
-    if record.candidates:
-        for index, candidate in enumerate(record.candidates, start=1):
-            print(
-                f"  {index}. {candidate.name} (user_id={candidate.user_id}, score={candidate.score}, reason={candidate.reason})"
-            )
-    print("  s. skip this record")
-    print("  u. enter a Canvas user id manually")
+def summarize_status_rows(rows: list[dict[str, str | int]]) -> dict[str, int]:
+    summary: dict[str, int] = {}
+    for row in rows:
+        status = str(row.get("status", "unknown"))
+        summary[status] = summary.get(status, 0) + 1
+    return summary
+
+
+def format_points(value: float) -> str:
+    numeric = float(value)
+    return str(int(numeric)) if numeric.is_integer() else f"{numeric:.2f}".rstrip("0").rstrip(".")
+
+
+def _prompt_for_record(
+    record: MatchRecord,
+    roster_list: list[CanvasStudent],
+    roster_by_id: dict[int, CanvasStudent],
+    selected_claims: dict[int, str],
+    current_local_names: dict[str, str],
+    config: CanvasConnectConfig,
+) -> LockedMatchRecord:
+    working_record = record
+    max_display_candidates = 5
 
     while True:
-        choice = input("Choose candidate [1/2/3/s/u]: ").strip().casefold()
-        if choice in {"1", "2", "3"}:
+        ranked = rank_candidates(working_record.local_student_name, roster_list)
+        top_candidate = ranked[0] if ranked else None
+        runner_up_score = ranked[1].score if len(ranked) > 1 else None
+
+        status = working_record.status
+        reason = working_record.reason
+        matched_user_id = working_record.matched_user_id
+        matched_student_name = working_record.matched_student_name
+        match_score = working_record.match_score
+
+        if top_candidate is not None:
+            status, reason = classify_match(
+                local_name=working_record.local_student_name,
+                top_candidate=top_candidate,
+                runner_up_score=runner_up_score,
+                requires_review=working_record.name_needs_review,
+                config=config,
+            )
+            matched_user_id = top_candidate.user_id
+            matched_student_name = top_candidate.name
+            match_score = top_candidate.score
+
+        working_record = replace(
+            working_record,
+            status=status,
+            reason=reason,
+            matched_user_id=matched_user_id,
+            matched_student_name=matched_student_name,
+            match_score=match_score,
+            runner_up_score=runner_up_score,
+            candidates=ranked[:3],
+        )
+
+        claimed_name = (
+            selected_claims.get(working_record.matched_user_id)
+            if working_record.matched_user_id is not None
+            else None
+        )
+        if (
+            working_record.local_student_name != record.local_student_name
+            and working_record.status == "auto"
+            and claimed_name is None
+            and working_record.matched_user_id is not None
+        ):
+            print()
+            print(
+                f"Updated name '{working_record.local_student_name}' auto-matched to "
+                f"{working_record.matched_student_name} (user_id={working_record.matched_user_id}, score={working_record.match_score})."
+            )
+            return _lock_from_record(working_record, working_record.matched_user_id, roster_by_id, "")
+
+        print()
+        print(f"Resolve: {working_record.local_student_name} [{working_record.status}, {working_record.reason}]")
+        print(f"  score: {working_record.total_score}/{working_record.max_score}")
+        if working_record.first_scan_path:
+            print(f"  first scan: {working_record.first_scan_path}")
+        if working_record.name_needs_review:
+            print("  note: local export flagged the handwritten name for review.")
+        displayed_candidates = ranked[:max_display_candidates]
+        for index, candidate in enumerate(displayed_candidates, start=1):
+            marker = ""
+            claim = selected_claims.get(candidate.user_id)
+            if claim is not None:
+                marker = f" [already selected for {claim}]"
+            elif working_record.matched_user_id == candidate.user_id:
+                marker = " [best match]"
+            print(
+                f"  {index}. {candidate.name} "
+                f"(user_id={candidate.user_id}, score={candidate.score}, reason={candidate.reason}){marker}"
+            )
+        if len(ranked) > max_display_candidates:
+            print(f"  ... showing top {max_display_candidates} of {len(ranked)} candidates")
+        print("  r. rename local student name and rematch")
+        print("  s. mark uncertain / skip this record")
+        print("  u. enter a Canvas user id manually")
+
+        choice = input("Choose candidate number, or r/s/u: ").strip().casefold()
+        if choice.isdigit():
             index = int(choice) - 1
-            if index >= len(record.candidates):
+            if index < 0 or index >= len(ranked):
                 print("Candidate does not exist.")
                 continue
-            note = input("Reviewer note (optional): ").strip()
-            return _lock_from_record(record, record.candidates[index].user_id, roster, note)
+            candidate = ranked[index]
+            if candidate.user_id in selected_claims:
+                claim = selected_claims[candidate.user_id]
+                if not confirm(f"{candidate.name} is already selected for {claim}. Use anyway? [y/N]: "):
+                    continue
+            selected_record = replace(
+                working_record,
+                matched_user_id=candidate.user_id,
+                matched_student_name=candidate.name,
+                match_score=candidate.score,
+            )
+            return _lock_from_record(selected_record, candidate.user_id, roster_by_id, "")
+        if choice == "r":
+            updated_name = input("Updated student name: ").strip()
+            if not updated_name:
+                print("Name cannot be empty.")
+                continue
+            _validate_renamed_student_name(record.local_submission_id, updated_name, current_local_names)
+            current_local_names[record.local_submission_id] = updated_name
+            working_record = replace(working_record, local_student_name=updated_name)
+            continue
         if choice == "s":
-            note = input("Reviewer note (optional): ").strip()
-            return _lock_skipped(record, note)
+            note = input("Uncertain note (optional): ").strip()
+            return _lock_skipped(working_record, note)
         if choice == "u":
             user_id_raw = input("Canvas user id: ").strip()
             if not user_id_raw.isdigit():
                 print("Enter a numeric Canvas user id.")
                 continue
             user_id = int(user_id_raw)
-            if user_id not in roster:
+            if user_id not in roster_by_id:
                 print("That user id is not in the loaded roster.")
                 continue
-            note = input("Reviewer note (optional): ").strip()
-            return _lock_from_record(record, user_id, roster, note)
+            if user_id in selected_claims:
+                claim = selected_claims[user_id]
+                if not confirm(f"{roster_by_id[user_id].name} is already selected for {claim}. Use anyway? [y/N]: "):
+                    continue
+            return _lock_from_record(working_record, user_id, roster_by_id, "")
         print("Invalid choice.")
 
 
 def _lock_from_record(
     record: MatchRecord,
     user_id: int | None,
-    roster: dict[int, CanvasStudent],
+    roster_by_id: dict[int, CanvasStudent],
     reviewer_note: str,
 ) -> LockedMatchRecord:
-    student = roster.get(user_id) if user_id is not None else None
+    student = roster_by_id.get(user_id) if user_id is not None else None
     if student is None:
         return _lock_skipped(record, reviewer_note or "No matching Canvas user selected.")
     return LockedMatchRecord(
@@ -380,6 +615,7 @@ def _lock_from_record(
         total_score=record.total_score,
         max_score=record.max_score,
         pdf_path=record.pdf_path,
+        first_scan_path=record.first_scan_path,
         final_status="matched",
         final_user_id=student.user_id,
         final_student_name=student.name,
@@ -399,6 +635,7 @@ def _lock_skipped(record: MatchRecord, reviewer_note: str) -> LockedMatchRecord:
         total_score=record.total_score,
         max_score=record.max_score,
         pdf_path=record.pdf_path,
+        first_scan_path=record.first_scan_path,
         final_status="skipped",
         final_user_id=None,
         final_student_name=None,
@@ -406,6 +643,19 @@ def _lock_skipped(record: MatchRecord, reviewer_note: str) -> LockedMatchRecord:
         source_reason=record.reason,
         reviewer_note=reviewer_note,
     )
+
+
+def _validate_renamed_student_name(
+    current_submission_id: str,
+    updated_name: str,
+    current_local_names: dict[str, str],
+) -> None:
+    candidate_names = [
+        name
+        for submission_id, name in current_local_names.items()
+        if submission_id != current_submission_id
+    ] + [updated_name]
+    ensure_unique_student_names(candidate_names, context="name correction")
 
 
 def _write_json(path: Path, payload) -> None:

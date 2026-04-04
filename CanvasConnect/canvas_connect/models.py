@@ -26,7 +26,7 @@ class LocalSubmission:
 
 @dataclass
 class LocalDataset:
-    export_path: str
+    export_paths: list[str]
     title: str
     created_at: str | None
     question_count: int
@@ -35,7 +35,7 @@ class LocalDataset:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "export_path": self.export_path,
+            "export_paths": self.export_paths,
             "title": self.title,
             "created_at": self.created_at,
             "question_count": self.question_count,
@@ -45,8 +45,12 @@ class LocalDataset:
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "LocalDataset":
+        export_paths = payload.get("export_paths")
+        if export_paths is None:
+            export_path = payload.get("export_path", "")
+            export_paths = [export_path] if export_path else []
         return cls(
-            export_path=payload["export_path"],
+            export_paths=list(export_paths),
             title=payload["title"],
             created_at=payload.get("created_at"),
             question_count=int(payload.get("question_count", 0)),
@@ -114,6 +118,7 @@ class MatchRecord:
     total_score: float
     max_score: float
     pdf_path: str
+    first_scan_path: str
     name_needs_review: bool
     teacher_reviewed: bool
     status: str
@@ -140,6 +145,7 @@ class MatchRecord:
             total_score=float(payload["total_score"]),
             max_score=float(payload["max_score"]),
             pdf_path=payload["pdf_path"],
+            first_scan_path=payload.get("first_scan_path", ""),
             name_needs_review=bool(payload["name_needs_review"]),
             teacher_reviewed=bool(payload["teacher_reviewed"]),
             status=payload["status"],
@@ -166,6 +172,7 @@ class LockedMatchRecord:
     total_score: float
     max_score: float
     pdf_path: str
+    first_scan_path: str
     final_status: str
     final_user_id: int | None
     final_student_name: str | None
@@ -187,6 +194,7 @@ class LockedMatchRecord:
             total_score=float(payload["total_score"]),
             max_score=float(payload["max_score"]),
             pdf_path=payload["pdf_path"],
+            first_scan_path=payload.get("first_scan_path", ""),
             final_status=payload["final_status"],
             final_user_id=(int(payload["final_user_id"]) if payload.get("final_user_id") is not None else None),
             final_student_name=payload.get("final_student_name"),

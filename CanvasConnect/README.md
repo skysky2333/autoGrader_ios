@@ -1,9 +1,9 @@
 # Canvas Connect
 
 `CanvasConnect` is a no-dependency Python CLI for taking a `HomeworkGrader` export,
-matching students against a Canvas roster, generating a Gradebook import CSV, and
-uploading each student's scanned exam to a manually created Canvas assignment on
-their behalf.
+matching students against a Canvas roster, generating a Gradebook import CSV or
+posting grades through the Canvas API, and uploading each student's scanned exam
+to a manually created Canvas assignment on their behalf.
 
 ## Workflow
 
@@ -16,8 +16,7 @@ their behalf.
 ```sh
 ./CanvasConnect/canvas-connect run \
   --config CanvasConnect/config.toml \
-  --export /Users/sky2333/Downloads/grading/files/Quiz2v3-2026-04-04T15-39-30Z \
-  --gradebook-csv /path/to/canvas-gradebook.csv
+  --grade-via-api
 ```
 
 The run will:
@@ -25,9 +24,11 @@ The run will:
 - build one PDF per local submission from exported scan images
 - fetch or load the Canvas roster
 - rank fuzzy student-name matches and stop for manual confirmation when needed
-- generate a Canvas Gradebook import CSV
+- allow a manual name correction loop that re-runs matching immediately
+- either generate a Canvas Gradebook import CSV or post grades directly through the Canvas API
 - optionally upload PDFs as student submissions through the Canvas API
 - lock the assignment after upload and keep manual grade posting enabled
+- abort immediately if duplicate local student names are detected, including after a manual name correction
 
 ## Assignment Safety Model
 
@@ -44,7 +45,7 @@ This means your manual workflow should be:
 
 1. Create the assignment unpublished.
 2. Run `CanvasConnect`.
-3. Import the generated grade CSV into Canvas.
+3. Either import the generated grade CSV or use API grade posting.
 4. Publish and manually post grades later when you are ready.
 
 ## Commands
@@ -54,6 +55,7 @@ This means your manual workflow should be:
 - `match`
 - `review-matches`
 - `build-grade-csv`
+- `post-grades`
 - `upload-submissions`
 - `run`
 
@@ -67,4 +69,4 @@ For a command reference:
 ## Config
 
 Copy `CanvasConnect/config.example.toml` to `CanvasConnect/config.toml` and fill in
-your course-specific values.
+your course-specific values. Set one or more export directories in `export_paths`.

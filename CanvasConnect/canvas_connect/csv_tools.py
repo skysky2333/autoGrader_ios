@@ -6,6 +6,7 @@ from pathlib import Path
 from .models import CanvasStudent, LockedMatchRecord
 
 
+GRADEBOOK_NAME_HEADERS = ["Student Name", "Student"]
 GRADEBOOK_STUDENT_ID_HEADERS = ["Student ID", "ID"]
 GRADEBOOK_SIS_HEADERS = ["SIS User ID"]
 GRADEBOOK_LOGIN_HEADERS = ["SIS Login ID", "Login ID"]
@@ -16,7 +17,7 @@ def load_gradebook_roster(path: Path) -> list[CanvasStudent]:
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = DictReader(handle)
         for row in reader:
-            name = (row.get("Student Name") or "").strip()
+            name = _first_value(row, GRADEBOOK_NAME_HEADERS)
             if not name or name == "Points Possible":
                 continue
             user_id = _first_value(row, GRADEBOOK_STUDENT_ID_HEADERS)
@@ -57,7 +58,7 @@ def build_grade_import_csv(
     updated = 0
     unmatched_template_rows = 0
     for row in rows:
-        if (row.get("Student Name") or "").strip() == "Points Possible":
+        if _first_value(row, GRADEBOOK_NAME_HEADERS) == "Points Possible":
             continue
         user_id = _first_value(row, GRADEBOOK_STUDENT_ID_HEADERS)
         if not user_id:
