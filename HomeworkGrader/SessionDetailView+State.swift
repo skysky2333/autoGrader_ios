@@ -195,7 +195,11 @@ extension SessionDetailView {
 
     func averageScore(for question: QuestionRubric) -> Double? {
         let scores = completedSubmissions.compactMap { submission -> Double? in
-            submission.questionGrades().first(where: { $0.questionID == question.questionID })?.awardedPoints
+            QuestionGradeLookup.grade(
+                for: question.questionID,
+                displayLabel: question.displayLabel,
+                in: submission.questionGrades()
+            )?.awardedPoints
         }
         guard !scores.isEmpty else { return nil }
         return scores.reduce(0, +) / Double(scores.count)

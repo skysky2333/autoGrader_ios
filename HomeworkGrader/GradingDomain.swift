@@ -30,6 +30,36 @@ struct QuestionGradeRecord: Codable, Hashable, Identifiable, Sendable {
     var id: String { questionID }
 }
 
+enum QuestionGradeLookup {
+    static func grade(
+        for questionID: String,
+        displayLabel: String,
+        in grades: [QuestionGradeRecord]
+    ) -> QuestionGradeRecord? {
+        if let exactIDMatch = grades.first(where: { $0.questionID == questionID }) {
+            return exactIDMatch
+        }
+
+        let normalizedQuestionID = normalize(questionID)
+        if let normalizedIDMatch = grades.first(where: { normalize($0.questionID) == normalizedQuestionID }) {
+            return normalizedIDMatch
+        }
+
+        let normalizedDisplayLabel = normalize(displayLabel)
+        if let displayLabelMatch = grades.first(where: { normalize($0.displayLabel) == normalizedDisplayLabel }) {
+            return displayLabelMatch
+        }
+
+        return nil
+    }
+
+    private static func normalize(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+    }
+}
+
 struct SubmissionDraft: Identifiable, Sendable {
     var id = UUID()
     var studentName: String

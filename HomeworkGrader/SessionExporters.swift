@@ -342,7 +342,7 @@ enum CSVExporter {
         let headerLine = headers.map(escapeCSV).joined(separator: ",")
 
         let rows = session.sortedSubmissions.map { submission in
-            let gradeByQuestion = Dictionary(uniqueKeysWithValues: submission.questionGrades().map { ($0.questionID, $0) })
+            let grades = submission.questionGrades()
             let values = [
                 submission.listDisplayName,
                 submission.processingState.rawValue.capitalized,
@@ -352,7 +352,11 @@ enum CSVExporter {
                 submission.teacherReviewed ? "Yes" : "No",
                 ISO8601DateFormatter().string(from: submission.createdAt),
             ] + questions.map { question in
-                if let grade = gradeByQuestion[question.questionID] {
+                if let grade = QuestionGradeLookup.grade(
+                    for: question.questionID,
+                    displayLabel: question.displayLabel,
+                    in: grades
+                ) {
                     return "\(formatCSVScore(grade.awardedPoints))/\(formatCSVScore(grade.maxPoints))"
                 }
                 return ""
@@ -369,7 +373,6 @@ enum CSVExporter {
         let headerLine = headers.map(escapeCSV).joined(separator: ",")
 
         let rows = snapshot.submissions.map { submission in
-            let gradeByQuestion = Dictionary(uniqueKeysWithValues: submission.grades.map { ($0.questionID, $0) })
             let values = [
                 submission.listDisplayName,
                 submission.processingState.capitalized,
@@ -379,7 +382,11 @@ enum CSVExporter {
                 submission.teacherReviewed ? "Yes" : "No",
                 ISO8601DateFormatter().string(from: submission.createdAt),
             ] + snapshot.questions.map { question in
-                if let grade = gradeByQuestion[question.questionID] {
+                if let grade = QuestionGradeLookup.grade(
+                    for: question.questionID,
+                    displayLabel: question.displayLabel,
+                    in: submission.grades
+                ) {
                     return "\(formatCSVScore(grade.awardedPoints))/\(formatCSVScore(grade.maxPoints))"
                 }
                 return ""

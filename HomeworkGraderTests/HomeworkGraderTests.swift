@@ -108,4 +108,28 @@ final class HomeworkGraderTests: XCTestCase {
             )
         }
     }
+
+    func testQuestionGradeLookupFallsBackToDisplayLabelWhenQuestionIDChanged() {
+        let grades = [
+            QuestionGradeRecord(
+                questionID: "legacy-q1",
+                displayLabel: "Question 1",
+                awardedPoints: 4,
+                maxPoints: 5,
+                isAnswerCorrect: true,
+                isProcessCorrect: true,
+                feedback: "Good",
+                needsReview: false
+            ),
+        ]
+
+        let matched = QuestionGradeLookup.grade(
+            for: "renamed-q1",
+            displayLabel: "Question 1",
+            in: grades
+        )
+
+        XCTAssertEqual(matched?.awardedPoints, 4)
+        XCTAssertEqual(matched?.maxPoints, 5)
+    }
 }
