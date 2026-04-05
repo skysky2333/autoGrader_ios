@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HGrader Developer Guide — HGrader</title>
+  <link rel="icon" type="image/png" href="../../images/app-icon.png">
+  <link rel="stylesheet" href="../../css/styles.css">
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../../index.html" class="logo">
+        <span class="logo-icon"><img src="../../images/app-icon.png" alt="HGrader"></span>
+        <span>HGrader</span>
+      </a>
+      <nav class="nav-links" id="nav-links">
+        <a href="../../index.html" class="nav-link">Home</a>
+        <div class="nav-dropdown">
+          <a href="#" class="nav-link active">HGrader <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></a>
+          <div class="nav-dropdown-menu">
+            <a href="../index.html" class="dropdown-item"><span class="dropdown-label">Overview</span><span class="dropdown-desc">What HGrader does and why</span></a>
+            <a href="../user-guide/index.html" class="dropdown-item"><span class="dropdown-label">User Guide</span><span class="dropdown-desc">How to use HGrader</span></a>
+            <a href="index.html" class="dropdown-item"><span class="dropdown-label">Developer Guide</span><span class="dropdown-desc">Architecture and internals</span></a>
+          </div>
+        </div>
+        <div class="nav-dropdown">
+          <a href="#" class="nav-link">CanvasConnect <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></a>
+          <div class="nav-dropdown-menu">
+            <a href="../../canvasconnect/index.html" class="dropdown-item"><span class="dropdown-label">Overview</span><span class="dropdown-desc">Bridge grading results to Canvas</span></a>
+            <a href="../../canvasconnect/user-guide/index.html" class="dropdown-item"><span class="dropdown-label">User Guide</span><span class="dropdown-desc">Configuration and usage</span></a>
+            <a href="../../canvasconnect/developer/index.html" class="dropdown-item"><span class="dropdown-label">Developer Guide</span><span class="dropdown-desc">Modules and API reference</span></a>
+          </div>
+        </div>
+        <a href="../../workflows/end-to-end.html" class="nav-link">Workflows</a>
+      </nav>
+      <div style="display:flex;align-items:center;gap:var(--space-2)">
+        <a href="https://github.com/skysky2333/autoGrader_ios" class="nav-github" aria-label="GitHub"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
+        <button class="mobile-toggle" aria-label="Toggle navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+    <aside class="docs-sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">HGrader Developer Guide</div>
+        <a href="#" class="sidebar-link active">Overview</a>
+        <a href="#tech-stack" class="sidebar-link">Tech Stack</a>
+        <a href="#project-structure" class="sidebar-link">Project Structure</a>
+        <a href="#data-models" class="sidebar-link">Data Models</a>
+        <a href="#openai-integration" class="sidebar-link">OpenAI Integration</a>
+        <a href="#grading-pipeline" class="sidebar-link">Grading Pipeline</a>
+        <a href="#batch-processing" class="sidebar-link">Batch Processing</a>
+        <a href="#views" class="sidebar-link">View Architecture</a>
+        <a href="#export-format" class="sidebar-link">Export Format</a>
+        <a href="#security" class="sidebar-link">Security</a>
+        <a href="#background-tasks" class="sidebar-link">Background Tasks</a>
+        <a href="#build-setup" class="sidebar-link">Build &amp; Setup</a>
+        <a href="#extension" class="sidebar-link">Extension Points</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Related</div>
+        <a href="../index.html" class="sidebar-link">HGrader Overview</a>
+        <a href="../user-guide/index.html" class="sidebar-link">User Guide</a>
+        <a href="../../canvasconnect/developer/index.html" class="sidebar-link">CanvasConnect Dev Guide</a>
+      </div>
+    </aside>
+
+    <main class="docs-main">
+      <button class="sidebar-toggle" aria-label="Toggle sidebar">☰ Menu</button>
+
+      <nav class="breadcrumbs">
+        <a href="../../index.html">Docs</a> <span class="sep">/</span>
+        <a href="../index.html">HGrader</a> <span class="sep">/</span>
+        <span>Developer Guide</span>
+      </nav>
+
+      <div class="page-header">
+        <span class="badge badge-dark">Developer Guide</span>
+        <h1 class="mt-4">HGrader Architecture</h1>
+        <p class="subtitle">Codebase structure, data models, services, and build configuration for the fully open-source HGrader iOS app.</p>
+      </div>
+
+      <div class="docs-content">
+
+        <h2 id="tech-stack">Tech Stack</h2>
+        <table>
+          <thead><tr><th>Layer</th><th>Technology</th></tr></thead>
+          <tbody>
+            <tr><td>UI</td><td>SwiftUI with <code>NavigationStack</code> for hierarchical navigation and deep linking between session list, detail, and settings.</td></tr>
+            <tr><td>Persistence</td><td>SwiftData with <code>ModelContainer</code>; schema entities <code>GradingSession</code>, <code>QuestionRubric</code>, and <code>StudentSubmission</code>.</td></tr>
+            <tr><td>Platform</td><td>iOS 17.0+, Swift 5.0</td></tr>
+            <tr><td>IDE</td><td>Xcode 15.4+</td></tr>
+            <tr><td>OpenAI</td><td>Responses API and Batch API over <code>URLSession</code> (HTTPS JSON). Live calls use structured outputs; batch jobs use JSONL file upload and polling.</td></tr>
+            <tr><td>Capture</td><td>VisionKit document scanner for sheet capture; custom <code>AVCaptureSession</code>-based camera path where the scanner is not used.</td></tr>
+            <tr><td>Secrets</td><td>OpenAI API key in Keychain via the Security framework (<code>SecItemCopyMatching</code>, add/update/delete); see <a href="#security">Security</a>.</td></tr>
+            <tr><td>Background</td><td>Background App Refresh for pending batch job refresh; local notifications when batches complete (see <a href="#background-tasks">Background Tasks</a>).</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="project-structure">Project Structure</h2>
+<pre><code>HomeworkGrader/
+├── HomeworkGraderApp.swift          # App entry, SwiftData container, background tasks
+├── ContentView.swift                # Session list, navigation, settings sheet
+├── PersistentModels.swift           # SwiftData entities: GradingSession, QuestionRubric, StudentSubmission
+├── GradingDomain.swift              # Rubric/grade DTOs, helpers, domain types
+│
+├── SessionDetailView.swift          # Session detail root view
+├── SessionDetailView+Tabs.swift     # Rubric / Overview / Results tab content
+├── SessionDetailView+State.swift    # View state management
+├── SessionDetailView+Capture.swift  # Scanning integration
+├── SessionDetailView+Batching.swift # Batch processing logic
+│
+├── OpenAIService.swift              # Core API client, request/response types
+├── OpenAIService+Batching.swift     # Batch grading implementation
+├── OpenAIServiceTypes.swift         # Request/response model definitions
+│
+├── SubmissionProcessing.swift       # Grading pipeline: scan → grade → validate
+├── SubmissionReviewViews.swift      # Review UI for individual submissions
+├── SavedSubmissionDetailView.swift  # Detailed submission view with score editing
+│
+├── AnswerKeyReviewView.swift        # Rubric review and approval UI
+├── RubricEditors.swift              # Rubric editing components
+├── DocumentScanner.swift            # VisionKit scanner wrapper
+│
+├── SessionExporters.swift           # CSV + ZIP package export
+└── AppSecrets.swift                 # Keychain wrapper for API key</code></pre>
+
+        <h2 id="data-models">Data Models</h2>
+        <p>HGrader persists three SwiftData <code>@Model</code> types. Cascade deletes ensure rubric rows and submissions are removed when a session is deleted. Large binary payloads use external storage where noted so the primary store stays lean.</p>
+
+        <h3>GradingSession</h3>
+        <p>Root aggregate for one grading workflow.</p>
+        <table>
+          <thead><tr><th>Field / concept</th><th>Role</th></tr></thead>
+          <tbody>
+            <tr><td><code>id</code> (<code>UUID</code>, unique)</td><td>Stable session identifier.</td></tr>
+            <tr><td><code>title</code></td><td>User-visible session name.</td></tr>
+            <tr><td><code>createdAt</code></td><td>Creation timestamp; session list sorts by this descending.</td></tr>
+            <tr><td><code>isFinished</code></td><td>Workflow completion flag.</td></tr>
+            <tr><td><code>rubricApprovedAt</code></td><td>When the answer key was approved for grading.</td></tr>
+            <tr><td><code>answerModelID</code>, <code>gradingModelID</code>, <code>validationModelID</code>?</td><td>Which OpenAI models drive rubric generation, grading, and optional validation.</td></tr>
+            <tr><td><code>validationEnabled</code>?</td><td>Whether the validation pass runs after grading.</td></tr>
+            <tr><td><code>validationMaxAttempts</code>?</td><td>Maximum validation/regrade loops; resolved with a floor of 1 (<code>validationMaxAttemptsResolved</code>).</td></tr>
+            <tr><td>Reasoning / verbosity / service tier (per model)</td><td><code>answer*</code>, <code>grading*</code>, <code>validation*</code> fields passed through to API requests for each role.</td></tr>
+            <tr><td><code>maxPagesPerSubmission</code>?</td><td>Cap on pages sent per submission.</td></tr>
+            <tr><td><code>overallGradingRules</code>?</td><td>Session-wide grading instructions.</td></tr>
+            <tr><td><code>relaxedGradingMode</code>?</td><td>Softer grading behavior when enabled.</td></tr>
+            <tr><td><code>integerPointsOnly</code>?</td><td>Restrict scores to whole numbers.</td></tr>
+            <tr><td><code>estimatedCostUSD</code>?</td><td>Tracked usage estimate for the session.</td></tr>
+            <tr><td><code>apiKeyFingerprint</code>?</td><td>Associates cost tracking with the key identity (SHA256 prefix); not the key itself.</td></tr>
+            <tr><td><code>questions</code></td><td>Relationship to <code>QuestionRubric</code> (cascade).</td></tr>
+            <tr><td><code>submissions</code></td><td>Relationship to <code>StudentSubmission</code> (cascade).</td></tr>
+            <tr><td>Rubric batch: <code>rubricProcessingStateRaw</code>, <code>rubricProcessingDetail</code>?, <code>rubricRemoteBatchID</code>, <code>rubricRemoteBatchRequestID</code></td><td>State machine, human-readable status detail, and OpenAI batch identifiers for async rubric generation.</td></tr>
+            <tr><td><code>pendingRubricPayloadArchive</code>, <code>masterScanArchive</code></td><td>External storage blobs for in-flight rubric input and master answer-key scans.</td></tr>
+          </tbody>
+        </table>
+
+        <h3>QuestionRubric</h3>
+        <p>One row per question in the session rubric.</p>
+        <table>
+          <thead><tr><th>Field</th><th>Role</th></tr></thead>
+          <tbody>
+            <tr><td><code>id</code> (unique)</td><td>Row identity.</td></tr>
+            <tr><td><code>orderIndex</code></td><td>Display and grading order.</td></tr>
+            <tr><td><code>questionID</code></td><td>Stable question key in payloads.</td></tr>
+            <tr><td><code>displayLabel</code></td><td>Short label shown in UI.</td></tr>
+            <tr><td><code>promptText</code></td><td>Question wording as presented to the model.</td></tr>
+            <tr><td><code>idealAnswer</code></td><td>Reference answer for grading.</td></tr>
+            <tr><td><code>gradingCriteria</code></td><td>Rubric criteria text for the model.</td></tr>
+            <tr><td><code>maxPoints</code></td><td>Maximum score for the item.</td></tr>
+            <tr><td><code>session</code></td><td>Inverse relationship to <code>GradingSession</code>.</td></tr>
+          </tbody>
+        </table>
+
+        <h3>StudentSubmission</h3>
+        <p>One graded (or in-progress) student packet per session.</p>
+        <table>
+          <thead><tr><th>Field / concept</th><th>Role</th></tr></thead>
+          <tbody>
+            <tr><td><code>id</code> (unique), <code>createdAt</code></td><td>Identity and ordering.</td></tr>
+            <tr><td><code>studentName</code></td><td>Display name; may be refined after OCR or model extraction.</td></tr>
+            <tr><td><code>nameNeedsReview</code>?</td><td>Flag when the name should be confirmed.</td></tr>
+            <tr><td><code>needsAttention</code>?, <code>attentionReasonsText</code>?</td><td>Teacher-facing attention markers and reasons.</td></tr>
+            <tr><td><code>validationNeedsReview</code>?</td><td>Validation pass flagged ambiguity or conflict.</td></tr>
+            <tr><td><code>overallNotes</code></td><td>Freeform notes.</td></tr>
+            <tr><td><code>teacherReviewed</code></td><td>Whether a human marked review complete.</td></tr>
+            <tr><td><code>totalScore</code>, <code>maxScore</code></td><td>Aggregated scores for export and UI.</td></tr>
+            <tr><td><code>processingStateRaw</code></td><td>High-level state: completed, pending, or failed.</td></tr>
+            <tr><td><code>batchStageRaw</code></td><td>Batch pipeline stage: queued, grading, validating, regrading.</td></tr>
+            <tr><td><code>batchAttemptNumber</code>?</td><td>Attempt counter for batch or retry flows.</td></tr>
+            <tr><td><code>processingDetail</code>?</td><td>Human-readable or diagnostic detail for the current step.</td></tr>
+            <tr><td><code>remoteBatchID</code>?, <code>remoteBatchRequestID</code>?</td><td>OpenAI batch and per-line request tracking.</td></tr>
+            <tr><td><code>session</code></td><td>Inverse to <code>GradingSession</code>.</td></tr>
+            <tr><td>External storage: <code>scanArchive</code>, <code>gradeArchive</code>, <code>latestSubmissionPayloadArchive</code>, <code>latestValidationPayloadArchive</code>, <code>debugArchive</code></td><td>Serialized scans, graded payloads, latest request/response snapshots, and optional debug trace.</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="openai-integration">OpenAI Integration</h2>
+        <p>Networking is centralized in <code>OpenAIService</code> and <code>OpenAIService+Batching.swift</code>, using <code>URLSession</code> against the OpenAI REST API.</p>
+
+        <h3>Endpoints</h3>
+        <table>
+          <thead><tr><th>Path</th><th>Use</th></tr></thead>
+          <tbody>
+            <tr><td><code>/v1/responses</code></td><td>Live structured completions (rubric, grade, validation) with JSON schema output.</td></tr>
+            <tr><td><code>/v1/batches</code></td><td>Create batch jobs and poll status until terminal state.</td></tr>
+            <tr><td><code>/v1/files</code></td><td>Upload JSONL inputs (<code>purpose: batch</code>) and download result files by <code>output_file_id</code>.</td></tr>
+            <tr><td><code>/v1/organization/costs</code></td><td>Organization usage/cost fetch for Settings (when the key has access).</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Live API flow</h3>
+        <p>Images are encoded as base64 and sent in the message content alongside system instructions and user text. Requests target <code>/v1/responses</code> with structured output definitions so the model returns JSON matching app-defined schemas (rubric shape, per-question grades, validation verdicts).</p>
+
+        <h3>Batch API flow (recommended path)</h3>
+        <ol>
+          <li><strong>Build JSONL</strong> — Write a temporary file; each line is one batch request object with a <code>custom_id</code>, <code>method: POST</code>, <code>url: /v1/responses</code>, and a <code>body</code> that references student images via file URLs (after upload) rather than inlined base64 for scale.</li>
+          <li><strong>Upload</strong> — <code>POST /v1/files</code> with <code>purpose: batch</code> to obtain <code>input_file_id</code>.</li>
+          <li><strong>Create batch</strong> — <code>POST /v1/batches</code> with <code>input_file_id</code>, endpoint <code>/v1/responses</code>, and <code>completion_window: 24h</code> (or as configured).</li>
+          <li><strong>Poll</strong> — Poll batch status until completed or failed.</li>
+          <li><strong>Download</strong> — Fetch output JSONL from <code>/v1/files/{output_file_id}/content</code>.</li>
+          <li><strong>Parse</strong> — For each JSONL line, read the HTTP-style response body and extract the model output text / structured payload for merging into SwiftData.</li>
+        </ol>
+
+        <h3>Batch cost optimization</h3>
+        <p>Batch API pricing is lower than synchronous Responses calls. The app applies a <strong>0.5 multiplier</strong> to usage estimates for batch lines when projecting cost, so UI estimates stay aligned with the discounted batch path.</p>
+
+        <h3>Model pricing</h3>
+        <p><code>PricingCatalog</code> in <code>OpenAIServiceTypes.swift</code> defines <code>ModelPricing</code> (per-million-token USD rates for input, cached input, and output). It matches model IDs by prefix, including GPT-5.4 / 5.2 / 5 (plus mini and nano variants), GPT-4.1 (and mini), and GPT-4o (and mini). <code>estimatedCostUSD(modelID:inputTokens:outputTokens:cachedInputTokens:)</code> combines usage with these rates.</p>
+
+        <h3>Validation pipeline</h3>
+        <p>After initial grading, if validation is enabled, a separate validation model reviews scores and reasoning. If validation rejects or requests changes, the app can <strong>regrade</strong> using the prior grading output plus validator feedback. This loop runs up to <code>validationMaxAttempts</code> before surfacing failure or manual review in the UI.</p>
+
+        <div class="callout callout-info">
+          <div class="callout-title">API key management</div>
+          The key lives only in Keychain under <code>AppSecrets.openAIKey</code> (see <a href="#security">Security</a>). It is never written to SwiftData, export packages, or debug archives intended for sharing.
+        </div>
+
+        <h2 id="grading-pipeline">Grading Pipeline</h2>
+        <p>Core orchestration lives in <code>SubmissionProcessing.swift</code>.</p>
+        <ul>
+          <li><strong><code>SubmissionProcessor.grade()</code></strong> — Entry point: runs initial <code>gradeSubmission</code>, then delegates to <code>processValidatedSubmission</code> when validation is enabled.</li>
+          <li><strong>Validation path</strong> — <code>processValidatedSubmission</code> runs validate → approve or enter a regrade loop (prior grade + validator feedback) up to <code>validationMaxAttempts</code>.</li>
+          <li><strong><code>SubmissionDebugRecorder</code></strong> — An <code>actor</code> that records a chronological trace of pipeline events for debugging; output can be persisted to submission external storage when enabled.</li>
+          <li><strong><code>BatchSubmissionStage</code></strong> — Enum modeling async stages: <code>queued</code> → <code>grading</code> → <code>validating</code> → <code>regrading</code> → terminal <code>completed</code> or <code>failed</code>. Persisted via <code>batchStageRaw</code> on <code>StudentSubmission</code>.</li>
+        </ul>
+
+        <h2 id="batch-processing">Batch Processing</h2>
+        <p>Session-level batching is split across <code>SessionDetailView+Batching.swift</code> and <code>OpenAIService+Batching.swift</code>.</p>
+
+        <h3>Rubric batch</h3>
+        <p>Async rubric generation uses session fields <code>rubricProcessingStateRaw</code>, <code>rubricRemoteBatchID</code>, and <code>rubricRemoteBatchRequestID</code>, plus external archives for pending input. Helpers such as <code>refreshPendingRubricGeneration</code> poll OpenAI until the job finishes; <code>finalizeCompletedRubricBatch</code> downloads results, parses JSONL lines, and materializes <code>QuestionRubric</code> rows.</p>
+
+        <h3>Submission batches by stage</h3>
+        <p>Submissions move through stages: <strong>grading</strong>, then <strong>validation</strong>, then <strong>regrading</strong> when needed. Each stage can enqueue a new OpenAI batch. On completion, the UI logic auto-queues the next stage so teachers see continuous progress without manual restarts.</p>
+
+        <h3>UI polling hooks</h3>
+        <p><code>SessionDetailView</code> keeps identifiers such as <code>pendingRubricPollingID</code> and <code>pendingBatchPollingID</code> so <code>.refreshable</code> and foreground refresh can re-query batch status without duplicating in-flight work.</p>
+
+        <h2 id="views">View Architecture</h2>
+
+        <h3>ContentView</h3>
+        <ul>
+          <li><strong>Data</strong> — <code>@Query</code> over <code>GradingSession</code>, sorted by <code>createdAt</code> descending.</li>
+          <li><strong>Navigation</strong> — <code>NavigationStack</code> with destinations for session detail.</li>
+          <li><strong>NewSessionSheet</strong> — Creates sessions with model selection from <code>ModelCatalog</code> and API-related settings aligned with the session model fields.</li>
+          <li><strong>SettingsView</strong> — Keychain-backed API key editor, organization cost fetch (<code>/v1/organization/costs</code>), and tracked in-app cost keyed by <code>APIKeyIdentity.fingerprint(for:)</code> (see <a href="#security">Security</a>).</li>
+        </ul>
+
+        <h3>SessionDetailView</h3>
+        <ul>
+          <li><strong>Tabs</strong> — Segmented control bound to <code>SessionSectionTab</code> (<code>.rubric</code>, <code>.overview</code>, <code>.results</code>) with a <code>TabView</code> (page style) for swiping between sections.</li>
+          <li><strong>Forms</strong> — Three primary forms; each uses <code>.refreshable</code> to poll batch and job status when the user pulls to refresh.</li>
+          <li><strong>ScanIntent</strong> — Enum <code>.master</code>, <code>.student</code>, <code>.batch</code> routes capture flows to the correct archive fields and follow-up processing.</li>
+        </ul>
+
+        <p>Supporting views include <code>SubmissionReviewViews</code> for per-submission summaries, <code>SavedSubmissionDetailView</code> for deep inspection and score edits, <code>AnswerKeyReviewView</code> and <code>RubricEditors</code> for rubric approval and edits, and <code>DocumentScanner</code> as the VisionKit bridge.</p>
+
+        <h2 id="export-format">Export Format</h2>
+        <p><code>SessionExporter</code> (in <code>SessionExporters.swift</code>) assembles a directory tree, then zips it.</p>
+        <ul>
+          <li><code>session.csv</code> — Flat spreadsheet of students and scores for quick review.</li>
+          <li><code>rubric.json</code> — Machine-readable rubric definition.</li>
+          <li><code>session-summary.json</code> — Session metadata and aggregates for downstream tools.</li>
+          <li><code>master_scans/</code> — Exported master answer-key images.</li>
+          <li><code>submissions/&lt;safeName&gt;-&lt;idPrefix&gt;/</code> — Per student: <code>summary.json</code> plus <code>scans/</code> for page images.</li>
+        </ul>
+        <p>Archiving uses <code>SimpleZipWriter</code>: a minimal ZIP implementation emitting local file headers, a central directory, and end-of-central-directory record, with per-entry <strong>CRC32</strong> for integrity. This avoids third-party zip dependencies while staying compatible with standard unzip tools and CanvasConnect ingestion.</p>
+
+        <h2 id="security">Security</h2>
+        <ul>
+          <li><strong>Keychain account</strong> — <code>AppSecrets.openAIKey</code> (<code>AppSettings.swift</code>) is the keychain account string for the OpenAI credential.</li>
+          <li><strong><code>KeychainStore</code></strong> — Singleton in <code>AppSettings.swift</code> wrapping <code>SecItemCopyMatching</code>, <code>SecItemUpdate</code>, <code>SecItemAdd</code>, and <code>SecItemDelete</code> for read/write/delete of the API key.</li>
+          <li><strong>Identity without exposure</strong> — <code>APIKeyIdentity.fingerprint(for:)</code> (CryptoKit <code>SHA256</code>) returns a <strong>16-character hex prefix</strong> of the digest for correlating usage and settings display, or <code>nil</code> for empty keys. The full key never appears in logs, SwiftData, or exports.</li>
+          <li><strong>Exports</strong> — Session ZIP and JSON artifacts omit secrets; only grades, rubric, and image payloads leave the device.</li>
+        </ul>
+
+        <h2 id="background-tasks">Background Tasks</h2>
+        <ul>
+          <li><strong><code>AppBatchRefreshCoordinator</code></strong> — Schedules <code>BGAppRefreshTaskRequest</code> so iOS can wake the app periodically. When the task runs, the coordinator refreshes <strong>all pending batch jobs</strong> (rubric and submission batches) to advance state and persist results.</li>
+          <li><strong><code>AppNotificationCoordinator</code></strong> — Posts <strong>local push notifications</strong> when batches reach a completed (or otherwise terminal) state worth surfacing to the teacher, so they need not keep the app foregrounded.</li>
+        </ul>
+        <p>Registration and handling of these tasks is wired from <code>HomeworkGraderApp.swift</code> alongside SwiftData container setup.</p>
+
+        <h2 id="build-setup">Build &amp; Setup</h2>
+        <ol>
+          <li>Clone the repository and open <code>HomeworkGrader.xcodeproj</code> in Xcode 15.4+.</li>
+          <li>Select a physical iPhone as the build target (camera scanning requires a real device).</li>
+          <li>Build and run. On first launch, configure the OpenAI API key in Settings.</li>
+        </ol>
+
+        <div class="callout callout-warning">
+          <div class="callout-title">Simulator limitations</div>
+          The document scanner and camera capture require real hardware. The app builds for the simulator but capture-related features will not function there.
+        </div>
+
+        <h2 id="extension">Extension Points</h2>
+        <ul>
+          <li><strong>Additional AI providers</strong> — Introduce a protocol implemented by <code>OpenAIService</code> (or an adapter) to swap base URLs, auth, and response parsing.</li>
+          <li><strong>Custom rubric types</strong> — Extend <code>GradingDomain</code> DTOs and JSON schemas for alternate assessment shapes (MCQ, free response blocks, etc.).</li>
+          <li><strong>Direct LMS integration</strong> — Canvas is supported via CanvasConnect; the same export package could be uploaded by in-app Canvas APIs if desired.</li>
+          <li><strong>More export targets</strong> — Add writers beside <code>SessionExporter</code> / <code>SimpleZipWriter</code> for other gradebook formats.</li>
+        </ul>
+
+        <div class="next-steps">
+          <h3>Next Steps</h3>
+          <div class="next-links">
+            <a href="../user-guide/index.html" class="next-link">
+              <div><div class="next-link-title">User Guide</div><div class="next-link-desc">End-user documentation</div></div>
+              <span class="next-link-arrow">→</span>
+            </a>
+            <a href="../../canvasconnect/developer/index.html" class="next-link">
+              <div><div class="next-link-title">CanvasConnect Dev Guide</div><div class="next-link-desc">Python pipeline architecture</div></div>
+              <span class="next-link-arrow">→</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div style="display:flex;align-items:center;gap:var(--space-3)">
+        <span class="logo-icon" style="width:24px;height:24px"><img src="../../images/app-icon.png" alt=""></span>
+        <span>&copy; 2026 HGrader</span>
+      </div>
+      <div class="footer-links">
+        <a href="../index.html">HGrader</a>
+        <a href="../../canvasconnect/index.html">CanvasConnect</a>
+        <a href="https://github.com/skysky2333/autoGrader_ios" target="_blank">GitHub</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../../js/main.js"></script>
+</body>
+</html>

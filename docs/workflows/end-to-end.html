@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>End-to-End Grading Workflow — HGrader</title>
+  <link rel="icon" type="image/png" href="../images/app-icon.png">
+  <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../index.html" class="logo">
+        <span class="logo-icon"><img src="../images/app-icon.png" alt="HGrader"></span>
+        <span>HGrader</span>
+      </a>
+      <nav class="nav-links" id="nav-links">
+        <a href="../index.html" class="nav-link">Home</a>
+        <div class="nav-dropdown">
+          <a href="#" class="nav-link">HGrader <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></a>
+          <div class="nav-dropdown-menu">
+            <a href="../hgrader/index.html" class="dropdown-item"><span class="dropdown-label">Overview</span><span class="dropdown-desc">What HGrader does and why</span></a>
+            <a href="../hgrader/user-guide/index.html" class="dropdown-item"><span class="dropdown-label">User Guide</span><span class="dropdown-desc">How to use HGrader</span></a>
+            <a href="../hgrader/developer/index.html" class="dropdown-item"><span class="dropdown-label">Developer Guide</span><span class="dropdown-desc">Architecture and internals</span></a>
+          </div>
+        </div>
+        <div class="nav-dropdown">
+          <a href="#" class="nav-link">CanvasConnect <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></a>
+          <div class="nav-dropdown-menu">
+            <a href="../canvasconnect/index.html" class="dropdown-item"><span class="dropdown-label">Overview</span><span class="dropdown-desc">Bridge grading results to Canvas</span></a>
+            <a href="../canvasconnect/user-guide/index.html" class="dropdown-item"><span class="dropdown-label">User Guide</span><span class="dropdown-desc">Configuration and usage</span></a>
+            <a href="../canvasconnect/developer/index.html" class="dropdown-item"><span class="dropdown-label">Developer Guide</span><span class="dropdown-desc">Modules and API reference</span></a>
+          </div>
+        </div>
+        <a href="end-to-end.html" class="nav-link active">Workflows</a>
+      </nav>
+      <div style="display:flex;align-items:center;gap:var(--space-2)">
+        <a href="https://github.com/skysky2333/autoGrader_ios" class="nav-github" aria-label="GitHub"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
+        <button class="mobile-toggle" aria-label="Toggle navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+    <aside class="docs-sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Workflows</div>
+        <a href="end-to-end.html" class="sidebar-link active">End-to-End Grading</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">On This Page</div>
+        <a href="#overview" class="sidebar-link">Overview</a>
+        <a href="#phase-1" class="sidebar-link">Phase 1: Grading</a>
+        <a href="#phase-2" class="sidebar-link">Phase 2: Export &amp; Transfer</a>
+        <a href="#phase-3" class="sidebar-link">Phase 3: Canvas Delivery</a>
+        <a href="#tips" class="sidebar-link">Tips &amp; Best Practices</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Related</div>
+        <a href="../hgrader/user-guide/index.html" class="sidebar-link">HGrader User Guide</a>
+        <a href="../canvasconnect/user-guide/index.html" class="sidebar-link">CanvasConnect User Guide</a>
+        <a href="../index.html" class="sidebar-link">Home</a>
+      </div>
+    </aside>
+
+    <main class="docs-main">
+      <button class="sidebar-toggle" aria-label="Toggle sidebar">☰ Menu</button>
+
+      <nav class="breadcrumbs">
+        <a href="../index.html">Docs</a> <span class="sep">/</span>
+        <span>End-to-End Workflow</span>
+      </nav>
+
+      <div class="page-header">
+        <span class="badge badge-blue">Workflow</span>
+        <h1 class="mt-4">End-to-End Grading Workflow</h1>
+        <p class="subtitle">The complete process from collecting paper assignments to published grades in Canvas LMS.</p>
+      </div>
+
+      <div class="docs-content">
+
+        <h2 id="overview">Overview</h2>
+        <p>The grading pipeline has three phases. HGrader handles Phase 1 on your iPhone. You transfer the results in Phase 2. CanvasConnect handles Phase 3 on your computer.</p>
+
+        <div class="flow-steps">
+          <div class="flow-step">
+            <div class="flow-step-num green">1</div>
+            <h4>Grade</h4>
+            <p>HGrader on iPhone</p>
+          </div>
+          <div class="flow-connector"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+          <div class="flow-step">
+            <div class="flow-step-num">2</div>
+            <h4>Transfer</h4>
+            <p>Export → your computer</p>
+          </div>
+          <div class="flow-connector"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+          <div class="flow-step">
+            <div class="flow-step-num purple">3</div>
+            <h4>Publish</h4>
+            <p>CanvasConnect → Canvas</p>
+          </div>
+        </div>
+
+        <h2 id="phase-1">Phase 1: Grading with HGrader</h2>
+        <p>This phase takes place entirely on your iPhone.</p>
+
+        <h3>Step 1.1 — Create a Session</h3>
+        <p>Open HGrader and create a new grading session. Select the AI models for rubric generation and grading. Enable validation if you want a second-pass accuracy check.</p>
+
+        <div class="device-iphone" style="max-width:180px;margin:var(--space-4) 0"><img src="../app_screenshots/create_new_section.PNG" alt="Create new grading session"></div>
+
+        <h3>Step 1.2 — Scan the Master Copy</h3>
+        <p>Scan the blank (or completed) assignment. This is the reference document the AI uses to generate the rubric. Use good lighting and capture all pages.</p>
+
+        <div class="screenshot-grid">
+          <div>
+            <div class="device-iphone" style="max-width:180px;margin:var(--space-4) 0"><img src="../app_screenshots/select_scan_method.PNG" alt="Select scanning method"></div>
+            <p class="screenshot-caption">Select scan method</p>
+          </div>
+          <div>
+            <div class="device-iphone" style="max-width:180px;margin:var(--space-4) 0"><img src="../app_screenshots/camera_capture.PNG" alt="Camera capturing document"></div>
+            <p class="screenshot-caption">Camera capture</p>
+          </div>
+        </div>
+
+        <h3>Step 1.3 — Generate and Review the Rubric</h3>
+        <p>The AI analyzes the master copy and produces a structured rubric. Switch to the <strong>Rubric</strong> tab to review:</p>
+        <ul>
+          <li>Verify that all questions are identified</li>
+          <li>Check point values match the assignment</li>
+          <li>Review expected answers for accuracy</li>
+          <li>Edit anything that needs correction</li>
+        </ul>
+
+        <div class="callout callout-tip">
+          <div class="callout-title">Rubric accuracy is critical</div>
+          The rubric drives all subsequent grading. Spend time reviewing it carefully — errors here cascade to every student's score.
+        </div>
+
+        <div class="screenshot-grid">
+          <div>
+            <div class="device-iphone" style="max-width:180px;margin:var(--space-4) 0"><img src="../app_screenshots/rubric.PNG" alt="Generated rubric"></div>
+            <p class="screenshot-caption">Rubric view</p>
+          </div>
+          <div>
+            <div class="device-iphone" style="max-width:180px;margin:var(--space-4) 0"><img src="../app_screenshots/approve_rubric.PNG" alt="Approve rubric"></div>
+            <p class="screenshot-caption">Approve rubric</p>
+          </div>
+        </div>
+
+        <h3>Step 1.4 — Scan and Grade Student Work</h3>
+        <p>Choose single-student or batch mode:</p>
+        <ul>
+          <li><strong>Single mode:</strong> Scan one student's pages, enter their name, submit for grading. Repeat per student.</li>
+          <li><strong>Batch mode:</strong> Scan all papers at once. HGrader prompts you to separate and name each student's work. Grading proceeds in the background.</li>
+        </ul>
+
+        <div class="device-iphone" style="max-width:180px;margin:var(--space-4) 0"><img src="../app_screenshots/job_status.PNG" alt="Grading job status"></div>
+
+        <h3>Step 1.5 — Review Results</h3>
+        <p>In the <strong>Results</strong> tab, review each student's scores:</p>
+        <ul>
+          <li>Check per-question scores and reasoning</li>
+          <li>Adjust any scores that need manual correction</li>
+          <li>Verify total scores make sense</li>
+        </ul>
+
+        <div class="screenshot-grid">
+          <div>
+            <div class="device-iphone" style="max-width:180px;margin:var(--space-4) 0"><img src="../app_screenshots/results.PNG" alt="Results overview"></div>
+            <p class="screenshot-caption">Results overview</p>
+          </div>
+          <div>
+            <div class="device-iphone" style="max-width:180px;margin:var(--space-4) 0"><img src="../app_screenshots/question_details.PNG" alt="Question details"></div>
+            <p class="screenshot-caption">Question details</p>
+          </div>
+        </div>
+
+        <h2 id="phase-2">Phase 2: Export and Transfer</h2>
+
+        <h3>Step 2.1 — Export the Session Package</h3>
+        <p>In the <strong>Overview</strong> tab, tap <strong>Export Full Session Package</strong>. HGrader creates a ZIP file containing all session data, scores, and scan images.</p>
+
+        <h3>Step 2.2 — Transfer to Your Computer</h3>
+        <p>Use the iOS share sheet to send the ZIP to your computer:</p>
+        <ul>
+          <li><strong>AirDrop</strong> — fastest for Mac users</li>
+          <li><strong>Files / iCloud</strong> — syncs automatically</li>
+          <li><strong>Email</strong> — works for smaller sessions</li>
+        </ul>
+
+        <h3>Step 2.3 — Extract the Export</h3>
+        <p>Unzip the package to a folder on your computer. CanvasConnect expects the <strong>extracted folder</strong>, not the ZIP file.</p>
+
+        <h2 id="phase-3">Phase 3: Publishing with CanvasConnect</h2>
+
+        <h3>Step 3.1 — Prepare Canvas</h3>
+        <p>In Canvas LMS:</p>
+        <ol>
+          <li>Create an assignment with <strong>File Uploads</strong> as the submission type (if you want PDF uploads).</li>
+          <li>Keep the assignment <strong>unpublished</strong> until after uploads are complete.</li>
+          <li>Generate a Canvas API token from Account → Settings → New Access Token.</li>
+        </ol>
+
+        <h3>Step 3.2 — Configure CanvasConnect</h3>
+<pre><code># Set up configuration
+cp config.example.toml config.toml
+# Edit config.toml with your Canvas URL, course ID, assignment ID
+
+# Set your API token
+export CANVAS_API_TOKEN="your-token"</code></pre>
+
+        <h3>Step 3.3 — Run the Pipeline</h3>
+<pre><code>./canvas-connect run</code></pre>
+
+        <p>The pipeline will:</p>
+        <div class="flow-steps">
+          <div class="flow-step">
+            <div class="flow-step-num green">1</div>
+            <h4>Parse</h4>
+            <p>Read exports, build PDFs</p>
+          </div>
+          <div class="flow-connector"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+          <div class="flow-step">
+            <div class="flow-step-num green">2</div>
+            <h4>Roster</h4>
+            <p>Load Canvas students</p>
+          </div>
+          <div class="flow-connector"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+          <div class="flow-step">
+            <div class="flow-step-num purple">3</div>
+            <h4>Match</h4>
+            <p>Map names to roster</p>
+          </div>
+          <div class="flow-connector"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+          <div class="flow-step">
+            <div class="flow-step-num purple">4</div>
+            <h4>Post</h4>
+            <p>Grades + PDFs to Canvas</p>
+          </div>
+        </div>
+
+        <h3>Step 3.4 — Verify in Canvas</h3>
+        <p>After the pipeline completes:</p>
+        <ol>
+          <li>Open the assignment in Canvas SpeedGrader</li>
+          <li>Verify that grades and PDFs are attached correctly</li>
+          <li>Publish the assignment when ready</li>
+          <li>Post grades to make them visible to students</li>
+        </ol>
+
+        <h2 id="tips">Tips and Best Practices</h2>
+
+        <div class="callout callout-tip">
+          <div class="callout-title">Use batch mode for large classes</div>
+          Batch scanning is significantly faster for classes with 20+ students. Stack the papers neatly and scan the entire batch at once.
+        </div>
+
+        <div class="callout callout-info">
+          <div class="callout-title">Run step-by-step first</div>
+          The first time you use CanvasConnect with a new course, run each command individually to understand the matching results and verify configuration. Use <code>run</code> for subsequent assignments.
+        </div>
+
+        <div class="callout callout-warning">
+          <div class="callout-title">Always review matches</div>
+          Fuzzy matching is good but not perfect. Students with similar names, nicknames, or non-Latin characters may need manual correction. Always review the match results.
+        </div>
+
+        <h3>Timing Recommendations</h3>
+        <ul>
+          <li><strong>Scanning + grading</strong> (HGrader): ~2–5 minutes per 10 students (batch mode)</li>
+          <li><strong>Rubric review</strong>: 2–5 minutes per assignment</li>
+          <li><strong>CanvasConnect pipeline</strong>: 1–3 minutes (depending on class size and network speed)</li>
+          <li><strong>Total</strong>: A class of 30 students can go from paper to Canvas in under 15 minutes</li>
+        </ul>
+
+        <div class="next-steps">
+          <h3>Related Documentation</h3>
+          <div class="next-links">
+            <a href="../hgrader/user-guide/index.html" class="next-link">
+              <div><div class="next-link-title">HGrader User Guide</div><div class="next-link-desc">Detailed scanning and grading instructions</div></div>
+              <span class="next-link-arrow">→</span>
+            </a>
+            <a href="../canvasconnect/user-guide/index.html" class="next-link">
+              <div><div class="next-link-title">CanvasConnect User Guide</div><div class="next-link-desc">Configuration and command reference</div></div>
+              <span class="next-link-arrow">→</span>
+            </a>
+            <a href="../index.html" class="next-link">
+              <div><div class="next-link-title">Home</div><div class="next-link-desc">Product overview and architecture</div></div>
+              <span class="next-link-arrow">→</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div style="display:flex;align-items:center;gap:var(--space-3)">
+        <span class="logo-icon" style="width:24px;height:24px"><img src="../images/app-icon.png" alt=""></span>
+        <span>&copy; 2026 HGrader</span>
+      </div>
+      <div class="footer-links">
+        <a href="../hgrader/index.html">HGrader</a>
+        <a href="../canvasconnect/index.html">CanvasConnect</a>
+        <a href="https://github.com/skysky2333/autoGrader_ios" target="_blank">GitHub</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../js/main.js"></script>
+</body>
+</html>

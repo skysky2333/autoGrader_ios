@@ -1,119 +1,90 @@
 # HGrader + CanvasConnect
 
-This repo contains two tools that are meant to be used together:
+> **A note on quality.** This project was built for my own daily use, not as a demo. While AI was used heavily during development, every line ships with intent — async task management for all heavy work, careful memory and image lifecycle handling, thorough testing, and deliberate UI/UX decisions. For an iOS app, none of that is optional: the experience must be fluid, the app must stay snappy under load, and it must never crash. This is not vibe-coded junk.
 
-- `HGrader`: an iPhone app for scanning a blank assignment, generating a rubric/answer key with OpenAI, grading student scans, reviewing results, and exporting the finished session.
-- `CanvasConnect`: a Python CLI that takes an `HGrader` full export, matches students to a Canvas roster, then generates a Gradebook import CSV or posts grades and uploads scanned PDFs through the Canvas API.
+Fully open-source tools for AI-powered assignment grading and Canvas LMS integration.
 
-The Xcode project is still named `HomeworkGrader`, but the app UI is labeled `HGrader`.
+- **HGrader**: an iPhone app that scans paper assignments, generates rubrics with multimodal AI, and batch-grades entire stacks of student work — any subject, any handwriting, any layout.
+- **CanvasConnect**: a zero-dependency Python CLI that takes HGrader exports, fuzzy-matches students to a Canvas roster, posts grades via the Canvas API, and uploads scanned PDFs.
 
-## Which Tool Should You Use?
+📖 **[Documentation website →](https://skysky2333.github.io/autoGrader_ios/)**
 
-- Use `HGrader` when you want to scan and grade work on your phone.
-- Use `CanvasConnect` when you are finished grading and want to move scores and scanned PDFs into Canvas.
+## Key Features
+
+- **Any subject, any handwriting** — frontier multimodal models understand calculus, chemistry, essays, diagrams, foreign languages, and messy or chaotic layouts out of the box.
+- **Built-in LaTeX rendering** — AI feedback and rubric answers are rendered with MathJax for proper mathematical notation.
+- **Standalone & private** — HGrader runs entirely on your iPhone with your own OpenAI API key. Student data never touches a third-party server.
+- **Batch processing** — scan an entire stack of papers and let AI grade them asynchronously via the OpenAI Batch API (50% cheaper than live calls).
+- **Validation pipeline** — optional second-model validation reviews scores and requests regrading when needed.
+- **Background refresh & notifications** — batch jobs continue in the background; local push notifications alert you when grading completes.
+- **Zero-dependency CLI** — CanvasConnect uses only the Python standard library (3.11+).
 
 ## Quick Start
 
 ### HGrader
 
-Requirements:
-
-- Xcode 15.4 or newer
-- iPhone running iOS 17 or newer
-- Your own OpenAI API key
-
-Open and run:
+Requirements: Xcode 15.4+, iPhone running iOS 17+, your own OpenAI API key.
 
 1. Open `HomeworkGrader.xcodeproj` in Xcode.
-2. Set your signing team.
-3. Choose a physical iPhone as the run destination.
-4. Build and run.
+2. Set your signing team and choose a physical iPhone as the run destination.
+3. Build and run.
+4. Open **Settings** and save your OpenAI API key.
+5. Create a new session, choose models, and scan the blank assignment.
+6. Review and approve the AI-generated rubric.
+7. **Batch scan** student submissions (recommended — single-student mode is deprecated due to long wait times with large models).
+8. Review results, then export via **Export Full Session Package**.
 
-First grading workflow:
-
-1. Open `Settings` and save your OpenAI API key.
-2. Create a new session.
-3. Choose an answer-generation model and a grading model.
-4. Scan the blank assignment.
-5. Review and approve the generated rubric on the `Rubric` tab.
-6. Grade students with either `Scan Student Submission` or `Batch Scan Submissions`.
-7. Review saved results in the `Results` tab.
-8. Use `Export Full Session Package` when you want to hand the session off to `CanvasConnect`.
-
-Important notes:
-
-- `HGrader` sends scanned pages directly from the phone to OpenAI.
-- The API key is stored in the iOS Keychain.
-- `Export Full Session Package` creates a ZIP file. `CanvasConnect` expects the extracted folder inside that ZIP, not the ZIP itself.
+> The API key is stored in the iOS Keychain and never leaves the device. Exports contain only grades, rubric data, and scan images.
 
 ### CanvasConnect
 
-Requirements:
-
-- Python 3.11 or newer
-- A completed `HGrader` full export, extracted to a folder
-- A Canvas assignment you created manually if you want API grade posting or PDF upload
-- A Canvas API token if you want live roster loading, API grade posting, or PDF upload
-
-Recommended setup:
-
-1. Copy `CanvasConnect/config.example.toml` to `CanvasConnect/config.toml`.
-2. Point `export_paths` at the extracted `HGrader` export folder.
-3. Fill in `canvas_base_url`, `course_id`, and `assignment_id`.
-4. Export your Canvas token into the environment variable named by `token_env_var`.
-5. Create the Canvas assignment as an unpublished assignment that allows `File Uploads`.
-
-Typical run:
+Requirements: Python 3.11+, a completed HGrader export (extracted folder), a Canvas API token.
 
 ```sh
+# 1. Copy and edit the config
+cp CanvasConnect/config.example.toml CanvasConnect/config.toml
+
+# 2. Set your Canvas token
+export CANVAS_API_TOKEN="your_token_here"
+
+# 3. Run the full pipeline
 ./CanvasConnect/canvas-connect run \
   --config CanvasConnect/config.toml \
   --grade-via-api
 ```
 
-That run will:
+This will inspect the export, build PDFs, load the Canvas roster, fuzzy-match students, post grades, and upload scanned PDFs. Pass `--skip-upload` to post grades only.
 
-- inspect the `HGrader` export
-- build one PDF per local submission
-- load a Canvas roster
-- fuzzy-match local student names to Canvas students
-- stop for interactive review when a match is uncertain
-- post grades through the Canvas API
-- upload PDFs as student submissions
-- lock the assignment after upload if configured
+For a Canvas Gradebook import CSV instead of live API posting, provide `--gradebook-csv` and omit `--grade-via-api`.
 
-If you want a Canvas Gradebook import CSV instead of live API grade posting, provide a Gradebook CSV and do not use `--grade-via-api`.
+## Canvas Assignment Safety
 
-## Most Important Workflow Decisions
+CanvasConnect expects by default:
 
-- Use single-student scanning when you want to review and save each student immediately.
-- Use batch scanning when you want to capture many papers quickly and let grading finish later.
-- Turn on the validation model when you want a second model to verify grading and flag uncertain results.
-- Use `Export Session CSV` for a simple score sheet.
-- Use `Export Full Session Package` when you need scans, rubric data, JSON summaries, or Canvas upload support.
-- Pass `--skip-upload` to `CanvasConnect` if you only want grade output and do not want to upload PDFs.
+- An unpublished assignment that allows **File Uploads**
+- Manual grade posting (set automatically)
+- Assignment locked after upload (configurable)
 
-## Canvas Assignment Safety Rules
-
-`CanvasConnect` assumes you are trying to keep scanned exams hidden until you are ready. By default it expects:
-
-- an assignment that already exists
-- the assignment to be unpublished before upload
-- `File Uploads` enabled
-- manual grade posting enabled after upload
-- the assignment to be locked after upload
-
-If you only want a Gradebook CSV and do not need API posting or upload, you can avoid those live-assignment requirements by using the CSV import path.
+These can be adjusted in `config.toml`. If you only need a Gradebook CSV, no live Canvas assignment is required.
 
 ## Repo Layout
 
-- `HomeworkGrader/`: SwiftUI iPhone app source
-- `CanvasConnect/`: Python CLI and tests
-- `doc/HGrader/`: detailed user-facing documentation for the app
-- `doc/CanvasConnect/`: detailed user-facing documentation for the Canvas tool
+```
+HomeworkGrader/           SwiftUI iPhone app source
+CanvasConnect/            Python CLI and tests
+docs/                     Documentation website (GitHub Pages)
+```
 
-## Detailed Docs
+## Documentation
 
-- [Documentation Index](doc/README.md)
-- [HGrader Guide](doc/HGrader/README.md)
-- [CanvasConnect Guide](doc/CanvasConnect/README.md)
+The full documentation is available at **[skysky2333.github.io/autoGrader_ios](https://skysky2333.github.io/autoGrader_ios/)** and covers:
+
+- [HGrader User Guide](https://skysky2333.github.io/autoGrader_ios/hgrader/user-guide/) — scanning, grading, review, and export
+- [HGrader Developer Guide](https://skysky2333.github.io/autoGrader_ios/hgrader/developer/) — SwiftUI architecture, SwiftData models, OpenAI integration
+- [CanvasConnect User Guide](https://skysky2333.github.io/autoGrader_ios/canvasconnect/user-guide/) — configuration, matching, grade posting
+- [CanvasConnect Developer Guide](https://skysky2333.github.io/autoGrader_ios/canvasconnect/developer/) — pipeline design, Canvas API client, matching algorithm
+- [End-to-End Workflow](https://skysky2333.github.io/autoGrader_ios/workflows/end-to-end.html) — paper assignments through to published Canvas grades
+
+## License
+
+This project is fully open source.

@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HGrader</title>
+  <meta name="description" content="Grade any subject, any handwriting, any format. Powered by state-of-the-art multimodal AI, seamlessly integrated with Canvas LMS.">
+  <link rel="icon" type="image/png" href="images/app-icon.png">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- ======== Header ======== -->
+  <header class="site-header" style="background:rgba(10,10,10,0.85);border-bottom-color:rgba(255,255,255,0.08)">
+    <div class="header-inner">
+      <a href="index.html" class="logo" style="color:#fff">
+        <span class="logo-icon"><img src="images/app-icon.png" alt="HGrader"></span>
+        <span>HGrader</span>
+      </a>
+      <nav class="nav-links" id="nav-links">
+        <a href="index.html" class="nav-link active" style="color:rgba(255,255,255,0.9)">Home</a>
+        <div class="nav-dropdown">
+          <a href="#" class="nav-link" style="color:rgba(255,255,255,0.6)">HGrader <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></a>
+          <div class="nav-dropdown-menu">
+            <a href="hgrader/index.html" class="dropdown-item"><span class="dropdown-label">Overview</span><span class="dropdown-desc">What HGrader does and why</span></a>
+            <a href="hgrader/user-guide/index.html" class="dropdown-item"><span class="dropdown-label">User Guide</span><span class="dropdown-desc">How to use HGrader</span></a>
+            <a href="hgrader/developer/index.html" class="dropdown-item"><span class="dropdown-label">Developer Guide</span><span class="dropdown-desc">Architecture and internals</span></a>
+          </div>
+        </div>
+        <div class="nav-dropdown">
+          <a href="#" class="nav-link" style="color:rgba(255,255,255,0.6)">CanvasConnect <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></a>
+          <div class="nav-dropdown-menu">
+            <a href="canvasconnect/index.html" class="dropdown-item"><span class="dropdown-label">Overview</span><span class="dropdown-desc">Bridge grading results to Canvas</span></a>
+            <a href="canvasconnect/user-guide/index.html" class="dropdown-item"><span class="dropdown-label">User Guide</span><span class="dropdown-desc">Configuration and usage</span></a>
+            <a href="canvasconnect/developer/index.html" class="dropdown-item"><span class="dropdown-label">Developer Guide</span><span class="dropdown-desc">Modules and API reference</span></a>
+          </div>
+        </div>
+        <a href="workflows/end-to-end.html" class="nav-link" style="color:rgba(255,255,255,0.6)">Workflows</a>
+      </nav>
+      <div style="display:flex;align-items:center;gap:var(--space-2)">
+        <a href="https://github.com/skysky2333/autoGrader_ios" class="nav-github" style="color:rgba(255,255,255,0.5)" aria-label="GitHub"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
+        <button class="mobile-toggle" aria-label="Toggle navigation" aria-expanded="false" style="color:rgba(255,255,255,0.6)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ======== Dark Hero ======== -->
+  <section class="hero-dark">
+    <div class="hero-inner">
+      <div class="hero-split">
+        <div class="hero-text">
+          <span class="label">Powered by Multimodal AI</span>
+          <h1>Grade anything.<br>Any subject.<br>Any handwriting.</h1>
+          <p class="subtitle">
+            HGrader uses state-of-the-art omni models to understand any assignment
+            — math, science, essays, diagrams, chaotic layouts — without
+            special setup. Pair it with CanvasConnect to publish directly to Canvas&nbsp;LMS.
+          </p>
+          <div class="hero-actions">
+            <a href="hgrader/user-guide/index.html" class="btn btn-primary">Get Started</a>
+            <a href="workflows/end-to-end.html" class="btn btn-secondary">See the Workflow</a>
+          </div>
+          <a href="https://github.com/skysky2333/autoGrader_ios" target="_blank" class="source-link"><svg viewBox="0 0 16 16" fill="currentColor" style="width:16px;height:16px;vertical-align:-2px"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg> Source code on GitHub</a>
+        </div>
+        <div class="screenshot-showcase">
+          <div class="device-iphone">
+            <img src="app_screenshots/rubric.PNG" alt="HGrader Rubric View">
+          </div>
+          <div class="device-iphone">
+            <img src="app_screenshots/results.PNG" alt="HGrader Results View">
+          </div>
+          <div class="device-iphone">
+            <img src="app_screenshots/overview.PNG" alt="HGrader Overview">
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== Why It Works ======== -->
+  <section class="section">
+    <div class="section-header section-center">
+      <span class="section-label">Why HGrader</span>
+      <h2 style="margin-top:var(--space-2)">No templates. No training. Just grade.</h2>
+      <p>Built on frontier multimodal models that see and reason like a human — but faster.</p>
+    </div>
+
+    <div class="feature-grid">
+      <div class="feature-item">
+        <div class="feature-icon">🔬</div>
+        <h4>Every subject</h4>
+        <p>Calculus, organic chemistry, literature essays, circuit diagrams, foreign languages — the AI understands them all, out of the box.</p>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">✍️</div>
+        <h4>Reads any page</h4>
+        <p>Messy handwriting, answers in margins, out-of-order responses, smudged ink — the vision model reconstructs intent regardless of layout or legibility.</p>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">🔒</div>
+        <h4>Standalone &amp; private</h4>
+        <p>No backend servers. Runs entirely on your iPhone with your own API key. Student data never touches a third-party server — only you and the model.</p>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">📈</div>
+        <h4>Gets better over time</h4>
+        <p>As frontier models advance, HGrader's accuracy, speed, and subject coverage improve automatically — no app update needed.</p>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">🔓</div>
+        <h4>Fully open source</h4>
+        <p>Both HGrader and CanvasConnect are fully open source. Inspect the code, contribute improvements, or fork for your institution.</p>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">🔍</div>
+        <h4>Transparent reasoning</h4>
+        <p>Every score comes with the AI's reasoning, rendered with built-in LaTeX for proper math notation. Review, agree, or override — you stay in full control.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== Products ======== -->
+  <div class="section-muted">
+    <section class="section">
+      <div class="section-header section-center">
+        <span class="section-label">The Ecosystem</span>
+        <h2 style="margin-top:var(--space-2)">Two products. One grading pipeline.</h2>
+        <p>HGrader handles the intelligence. CanvasConnect handles the integration.</p>
+      </div>
+
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-icon green">⬡</div>
+          <h3>HGrader</h3>
+          <p>
+            An iPhone app for instructors. Scan a blank assignment, let AI generate
+            a rubric, then batch-scan an entire stack of student work. AI grades every
+            submission asynchronously while you keep working. Review, adjust, export.
+          </p>
+          <div style="margin:var(--space-6) 0">
+            <div class="device-iphone" style="max-width:180px">
+              <img src="app_screenshots/main_page.PNG" alt="HGrader Session List">
+            </div>
+          </div>
+          <a href="hgrader/index.html" class="card-link">Explore HGrader</a>
+        </div>
+        <div class="card">
+          <div class="card-icon dark">⬢</div>
+          <h3>CanvasConnect</h3>
+          <p>
+            A Python CLI that takes HGrader exports and delivers them to Canvas LMS.
+            Fuzzy-matches student names to your roster — even with nicknames, typos,
+            or non-Latin characters — builds submission PDFs, and posts grades via the Canvas API.
+          </p>
+          <div style="margin:var(--space-6) 0">
+<pre style="margin:0;font-size:12px;max-width:340px"><code>$ ./canvas-connect run
+✓ Inspecting exports...
+✓ Loading roster...
+✓ Matching students (28/28)
+✓ Posting grades...
+✓ Uploading PDFs...
+Pipeline complete.</code></pre>
+          </div>
+          <a href="canvasconnect/index.html" class="card-link">Explore CanvasConnect</a>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ======== How It Works ======== -->
+  <div class="section-dark">
+    <section class="section">
+      <div class="section-header section-center">
+        <span class="section-label">How It Works</span>
+        <h2 style="margin-top:var(--space-2);color:#fff">From paper to Canvas in five steps</h2>
+      </div>
+
+      <div class="flow-steps">
+        <div class="flow-step">
+          <div class="flow-step-num green">1</div>
+          <h4 style="color:#fff">Scan</h4>
+          <p style="color:rgba(255,255,255,0.5)">Capture the blank assignment and student work on your iPhone</p>
+        </div>
+        <div class="flow-connector"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        <div class="flow-step">
+          <div class="flow-step-num green">2</div>
+          <h4 style="color:#fff">Grade</h4>
+          <p style="color:rgba(255,255,255,0.5)">AI generates a rubric and scores each submission with reasoning</p>
+        </div>
+        <div class="flow-connector"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        <div class="flow-step">
+          <div class="flow-step-num green">3</div>
+          <h4 style="color:#fff">Export</h4>
+          <p style="color:rgba(255,255,255,0.5)">Package results as a structured session export</p>
+        </div>
+        <div class="flow-connector"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        <div class="flow-step">
+          <div class="flow-step-num purple">4</div>
+          <h4 style="color:#fff">Match</h4>
+          <p style="color:rgba(255,255,255,0.5)">CanvasConnect maps students to your Canvas roster</p>
+        </div>
+        <div class="flow-connector"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        <div class="flow-step">
+          <div class="flow-step-num purple">5</div>
+          <h4 style="color:#fff">Publish</h4>
+          <p style="color:rgba(255,255,255,0.5)">Grades and PDFs are posted to Canvas</p>
+        </div>
+      </div>
+
+      <div class="arch-diagram" style="margin-top:var(--space-12)">
+        <div class="arch-flow">
+          <div class="arch-box green">
+            <h4>📱 HGrader</h4>
+            <p>iOS · Multimodal AI</p>
+          </div>
+          <div class="arch-arrow">→</div>
+          <div class="arch-box">
+            <h4>📦 Export Package</h4>
+            <p>JSON + CSV + Scans</p>
+          </div>
+          <div class="arch-arrow">→</div>
+          <div class="arch-box purple">
+            <h4>🖥 CanvasConnect</h4>
+            <p>Python CLI · Canvas API</p>
+          </div>
+          <div class="arch-arrow">→</div>
+          <div class="arch-box">
+            <h4>🎓 Canvas LMS</h4>
+            <p>Grades + PDFs Published</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ======== App Screenshots ======== -->
+  <section class="section">
+    <div class="section-header section-center">
+      <span class="section-label">Inside the App</span>
+      <h2 style="margin-top:var(--space-2)">Every step, right on your iPhone</h2>
+      <p>From scanning to AI grading to built-in LaTeX rendering of math feedback — you stay in control.</p>
+    </div>
+
+    <div class="screenshot-grid">
+      <div>
+        <div class="device-iphone" style="margin:0 auto">
+          <img src="app_screenshots/camera_capture.PNG" alt="Camera Capture">
+        </div>
+        <p class="screenshot-caption">Document scanning</p>
+      </div>
+      <div>
+        <div class="device-iphone" style="margin:0 auto">
+          <img src="app_screenshots/approve_rubric.PNG" alt="Rubric Approval">
+        </div>
+        <p class="screenshot-caption">Rubric review</p>
+      </div>
+      <div>
+        <div class="device-iphone" style="margin:0 auto">
+          <img src="app_screenshots/job_status.PNG" alt="Batch Job Status">
+        </div>
+        <p class="screenshot-caption">Job status</p>
+      </div>
+      <div>
+        <div class="device-iphone" style="margin:0 auto">
+          <img src="app_screenshots/question_details.PNG" alt="Question Details">
+        </div>
+        <p class="screenshot-caption">AI reasoning per question</p>
+      </div>
+      <div>
+        <div class="device-iphone" style="margin:0 auto">
+          <img src="app_screenshots/answer_render.PNG" alt="LaTeX Rendered Answer Key">
+        </div>
+        <p class="screenshot-caption">Built-in LaTeX rendering</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== Documentation Links ======== -->
+  <div class="section-muted">
+    <section class="section">
+      <div class="section-header section-center">
+        <span class="section-label">Documentation</span>
+        <h2 style="margin-top:var(--space-2)">Find what you need</h2>
+        <p>Whether you're grading assignments or extending the codebase.</p>
+      </div>
+
+      <div class="card-grid card-grid-3">
+        <a href="hgrader/user-guide/index.html" class="card" style="text-decoration:none">
+          <span class="badge badge-green">HGrader</span>
+          <h3 class="mt-4">User Guide</h3>
+          <p>Learn how to scan, grade, review, and export assignments using HGrader on your iPhone.</p>
+          <span class="card-link">Read the guide</span>
+        </a>
+        <a href="hgrader/developer/index.html" class="card" style="text-decoration:none">
+          <span class="badge badge-dark">Developer</span>
+          <h3 class="mt-4">HGrader Internals</h3>
+          <p>Architecture, SwiftUI views, SwiftData models, OpenAI integration, and build setup.</p>
+          <span class="card-link">View developer docs</span>
+        </a>
+        <a href="canvasconnect/user-guide/index.html" class="card" style="text-decoration:none">
+          <span class="badge badge-purple">CanvasConnect</span>
+          <h3 class="mt-4">User Guide</h3>
+          <p>Configure, match rosters, post grades, and upload submissions to Canvas LMS.</p>
+          <span class="card-link">Read the guide</span>
+        </a>
+        <a href="canvasconnect/developer/index.html" class="card" style="text-decoration:none">
+          <span class="badge badge-dark">Developer</span>
+          <h3 class="mt-4">CanvasConnect Internals</h3>
+          <p>Python modules, pipeline architecture, Canvas API wrapper, and extension points.</p>
+          <span class="card-link">View developer docs</span>
+        </a>
+        <a href="workflows/end-to-end.html" class="card" style="text-decoration:none">
+          <span class="badge badge-blue">Workflow</span>
+          <h3 class="mt-4">End-to-End Grading</h3>
+          <p>The complete workflow from scanning paper assignments to published Canvas grades.</p>
+          <span class="card-link">See the workflow</span>
+        </a>
+        <a href="hgrader/index.html" class="card" style="text-decoration:none">
+          <span class="badge badge-green">Features</span>
+          <h3 class="mt-4">HGrader Features</h3>
+          <p>Deep dive into scanning, AI rubric generation, batch processing, and export formats.</p>
+          <span class="card-link">Explore features</span>
+        </a>
+      </div>
+    </section>
+  </div>
+
+  <!-- ======== Footer ======== -->
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div style="display:flex;align-items:center;gap:var(--space-3)">
+        <span class="logo-icon" style="width:24px;height:24px"><img src="images/app-icon.png" alt=""></span>
+        <span>&copy; 2026 HGrader</span>
+      </div>
+      <div class="footer-links">
+        <a href="hgrader/index.html">HGrader</a>
+        <a href="canvasconnect/index.html">CanvasConnect</a>
+        <a href="workflows/end-to-end.html">Workflows</a>
+        <a href="https://github.com/skysky2333/autoGrader_ios" target="_blank">GitHub</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>

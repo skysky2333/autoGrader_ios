@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CanvasConnect Developer Guide — HGrader</title>
+  <link rel="icon" type="image/png" href="../../images/app-icon.png">
+  <link rel="stylesheet" href="../../css/styles.css">
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../../index.html" class="logo">
+        <span class="logo-icon"><img src="../../images/app-icon.png" alt="HGrader"></span>
+        <span>HGrader</span>
+      </a>
+      <nav class="nav-links" id="nav-links">
+        <a href="../../index.html" class="nav-link">Home</a>
+        <div class="nav-dropdown">
+          <a href="#" class="nav-link">HGrader <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></a>
+          <div class="nav-dropdown-menu">
+            <a href="../../hgrader/index.html" class="dropdown-item"><span class="dropdown-label">Overview</span><span class="dropdown-desc">What HGrader does and why</span></a>
+            <a href="../../hgrader/user-guide/index.html" class="dropdown-item"><span class="dropdown-label">User Guide</span><span class="dropdown-desc">How to use HGrader</span></a>
+            <a href="../../hgrader/developer/index.html" class="dropdown-item"><span class="dropdown-label">Developer Guide</span><span class="dropdown-desc">Architecture and internals</span></a>
+          </div>
+        </div>
+        <div class="nav-dropdown">
+          <a href="#" class="nav-link active">CanvasConnect <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></a>
+          <div class="nav-dropdown-menu">
+            <a href="../index.html" class="dropdown-item"><span class="dropdown-label">Overview</span><span class="dropdown-desc">Bridge grading results to Canvas</span></a>
+            <a href="../user-guide/index.html" class="dropdown-item"><span class="dropdown-label">User Guide</span><span class="dropdown-desc">Configuration and usage</span></a>
+            <a href="index.html" class="dropdown-item"><span class="dropdown-label">Developer Guide</span><span class="dropdown-desc">Modules and API reference</span></a>
+          </div>
+        </div>
+        <a href="../../workflows/end-to-end.html" class="nav-link">Workflows</a>
+      </nav>
+      <div style="display:flex;align-items:center;gap:var(--space-2)">
+        <a href="https://github.com/skysky2333/autoGrader_ios" class="nav-github" aria-label="GitHub"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
+        <button class="mobile-toggle" aria-label="Toggle navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+    <aside class="docs-sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">CanvasConnect Developer Guide</div>
+        <a href="#overview" class="sidebar-link active">Overview</a>
+        <a href="#architecture" class="sidebar-link">Architecture</a>
+        <a href="#modules" class="sidebar-link">Module Reference</a>
+        <a href="#data-flow" class="sidebar-link">Data Flow</a>
+        <a href="#config-reference" class="sidebar-link">Config Reference</a>
+        <a href="#pipeline" class="sidebar-link">Pipeline Flow</a>
+        <a href="#canvas-api" class="sidebar-link">Canvas API Client</a>
+        <a href="#matching-algo" class="sidebar-link">Matching Algorithm</a>
+        <a href="#error-handling" class="sidebar-link">Error Handling</a>
+        <a href="#testing" class="sidebar-link">Testing</a>
+        <a href="#extension" class="sidebar-link">Extension Points</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Related</div>
+        <a href="../index.html" class="sidebar-link">CanvasConnect Overview</a>
+        <a href="../user-guide/index.html" class="sidebar-link">User Guide</a>
+        <a href="../../hgrader/developer/index.html" class="sidebar-link">HGrader Dev Guide</a>
+      </div>
+    </aside>
+
+    <main class="docs-main">
+      <button class="sidebar-toggle" aria-label="Toggle sidebar">☰ Menu</button>
+
+      <nav class="breadcrumbs">
+        <a href="../../index.html">Docs</a> <span class="sep">/</span>
+        <a href="../index.html">CanvasConnect</a> <span class="sep">/</span>
+        <span>Developer Guide</span>
+      </nav>
+
+      <div class="page-header">
+        <span class="badge badge-dark">Developer Guide</span>
+        <h1 class="mt-4">CanvasConnect Architecture</h1>
+        <p class="subtitle">Module structure, pipeline design, Canvas API wrapper, matching algorithm, and extension points.</p>
+      </div>
+
+      <div class="docs-content">
+
+        <h2 id="overview">Overview</h2>
+        <p>This guide describes the CanvasConnect codebase: a small Python package that turns HGrader exports and Canvas rosters into locked student matches, grade CSVs or API posts, and optional PDF uploads. Everything below maps to the implementation under <code>CanvasConnect/canvas_connect/</code>.</p>
+
+        <h2 id="architecture">Architecture</h2>
+        <p>CanvasConnect is <strong>fully open source</strong> and ships as a <strong>zero-dependency Python 3.11+</strong> CLI built on the standard library only. Execution follows a <strong>pipeline</strong>: each step reads and writes artifacts under a shared, timestamped <strong>run directory</strong>.</p>
+        <p><code>models.py</code> defines the core <strong>dataclasses</strong> used across parsing, matching, and API layers (<code>LocalDataset</code>, <code>LocalSubmission</code>, roster and match records, upload results). <code>config.example.toml</code> in the repo root documents every supported TOML key with inline comments; the loader in <code>config.py</code> mirrors those fields.</p>
+
+        <table>
+          <thead><tr><th>Aspect</th><th>Detail</th></tr></thead>
+          <tbody>
+            <tr><td>Language</td><td>Python 3.11+ (<code>tomllib</code> for config)</td></tr>
+            <tr><td>Dependencies</td><td>None — stdlib only (<code>urllib</code>, <code>csv</code>, <code>json</code>, <code>dataclasses</code>, <code>difflib</code>, <code>unicodedata</code>, …)</td></tr>
+            <tr><td>Entry point</td><td><code>canvas-connect</code> (shebang launcher) → <code>cli.main</code></td></tr>
+            <tr><td>Configuration</td><td>TOML via <code>CanvasConnectConfig.load()</code>; legacy single <code>export_path</code> is accepted if <code>export_paths</code> is omitted</td></tr>
+            <tr><td>HTTP</td><td><code>urllib.request</code> with Bearer auth and manual multipart uploads</td></tr>
+            <tr><td>Testing</td><td><code>unittest</code> under <code>CanvasConnect/tests/</code></td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="modules">Module Reference</h2>
+<pre><code>CanvasConnect/
+├── canvas-connect
+├── config.example.toml          # Documented template for all options
+└── canvas_connect/
+    ├── __init__.py
+    ├── cli.py
+    ├── config.py
+    ├── models.py                # Core dataclasses
+    ├── pipeline.py
+    ├── export_parser.py
+    ├── matching.py
+    ├── api.py
+    ├── csv_tools.py
+    └── pdf.py</code></pre>
+
+        <h3>cli.py</h3>
+        <p>The CLI uses <code>argparse</code> with <code>parser.add_subparsers(dest="command", required=True)</code>. A global <code>--config</code> path is passed to <code>CanvasConnectConfig.load()</code> (optional; missing file yields defaults).</p>
+        <table>
+          <thead><tr><th>Command</th><th>Flags</th><th>Behavior</th></tr></thead>
+          <tbody>
+            <tr><td><code>inspect-export</code></td><td><code>--export</code> (repeatable append), <code>--run-dir</code> (required)</td><td>Resolves export paths then calls <code>inspect_export_step</code>.</td></tr>
+            <tr><td><code>load-roster</code></td><td><code>--run-dir</code>, <code>--gradebook-csv</code></td><td>Canvas API and/or CSV roster → <code>roster.json</code> / <code>roster.csv</code>.</td></tr>
+            <tr><td><code>match</code></td><td><code>--run-dir</code>, <code>--local-dataset</code>, <code>--roster</code></td><td>Defaults: <code>inspect/local_dataset.json</code>, <code>roster/roster.json</code>.</td></tr>
+            <tr><td><code>review-matches</code></td><td><code>--run-dir</code>, <code>--manifest</code>, <code>--roster</code>, <code>--yes</code></td><td>Defaults: <code>match/match_manifest.json</code>, <code>roster/roster.json</code>.</td></tr>
+            <tr><td><code>build-grade-csv</code></td><td><code>--run-dir</code>, <code>--locked-manifest</code>, <code>--gradebook-csv</code> (required), <code>--assignment-column</code></td><td>Requires assignment column from flag or config.</td></tr>
+            <tr><td><code>post-grades</code></td><td><code>--run-dir</code>, <code>--locked-manifest</code></td><td>API grade post using locked matches.</td></tr>
+            <tr><td><code>upload-submissions</code></td><td><code>--run-dir</code>, <code>--locked-manifest</code>, <code>--yes</code></td><td>Skips upload confirmation when <code>--yes</code>.</td></tr>
+            <tr><td><code>run</code></td><td><code>--export</code> (append), <code>--gradebook-csv</code>, <code>--assignment-column</code>, <code>--grade-via-api</code>, <code>--skip-upload</code>, <code>--yes</code></td><td>End-to-end <code>run_pipeline</code>.</td></tr>
+          </tbody>
+        </table>
+        <p><code>_resolve_export_paths(config, cli_exports)</code>: if the CLI passes <code>--export</code>, those paths win; otherwise uses <code>config.export_paths</code>; if still empty, exits with <code>SystemExit</code> explaining that <code>export_paths</code> or <code>--export</code> is required.</p>
+
+        <h3>config.py</h3>
+        <p><code>CanvasConnectConfig</code> is a dataclass loaded with <code>tomllib</code>. Field names and defaults:</p>
+        <ul>
+          <li><code>export_paths: list[str]</code> — default <code>[]</code>. Populated from <code>export_paths</code> in TOML, or from legacy <code>export_path</code> (single string) when <code>export_paths</code> is absent.</li>
+          <li><code>canvas_base_url: str</code> — <code>""</code></li>
+          <li><code>course_id: int | None</code>, <code>assignment_id: int | None</code> — <code>None</code></li>
+          <li><code>token_env_var: str</code> — <code>"CANVAS_API_TOKEN"</code></li>
+          <li><code>assignment_column: str</code> — <code>""</code> (gradebook column header for CSV path)</li>
+          <li><code>output_root: str</code> — <code>"CanvasConnect/output"</code></li>
+          <li><code>match_auto_accept_score: int</code> — <code>95</code></li>
+          <li><code>match_review_floor: int</code> — <code>90</code></li>
+          <li><code>match_margin: int</code> — <code>5</code></li>
+          <li><code>require_unpublished_assignment: bool</code> — <code>True</code></li>
+          <li><code>lock_assignment_after_upload: bool</code> — <code>True</code></li>
+          <li><code>enforce_manual_post_policy: bool</code> — <code>True</code></li>
+          <li><code>request_timeout_seconds: int</code> — <code>60</code></li>
+        </ul>
+
+        <h3>models.py</h3>
+        <p><strong>LocalSubmission</strong> fields: <code>submission_id</code>, <code>folder_name</code>, <code>student_name</code>, <code>total_score</code>, <code>max_score</code>, <code>teacher_reviewed</code>, <code>name_needs_review</code>, <code>created_at</code>, <code>overall_notes</code>, <code>scan_paths: list[str]</code>, <code>pdf_path: str</code>, <code>grades: list[dict]</code> (default empty).</p>
+        <p><strong>LocalDataset</strong> fields: <code>export_paths</code>, <code>title</code>, <code>created_at</code>, <code>question_count</code>, <code>total_points</code>, <code>submissions: list[LocalSubmission]</code>. <code>from_dict</code> accepts legacy <code>export_path</code> for older JSON.</p>
+        <p>Also defined: <code>CanvasStudent</code>, <code>MatchCandidate</code>, <code>MatchRecord</code>, <code>LockedMatchRecord</code>, <code>UploadResult</code>, plus <code>path_string()</code> helper.</p>
+
+        <h3>pipeline.py</h3>
+        <p><strong>Public step functions:</strong> <code>make_run_dir</code>, <code>inspect_export_step</code>, <code>load_roster_step</code>, <code>match_step</code>, <code>review_matches_step</code>, <code>build_grade_csv_step</code>, <code>post_grades_step</code>, <code>upload_submissions_step</code>, <code>run_pipeline</code>.</p>
+        <p><strong><code>run_pipeline</code> flow:</strong> <code>make_run_dir</code> → <code>inspect_export_step</code> → <code>load_roster_step</code> → <code>match_step</code> → optional confirm → <code>review_matches_step</code> → if <code>gradebook_csv</code> then <code>build_grade_csv_step</code>, else if <code>grade_via_api</code> then <code>post_grades_step</code> → unless <code>skip_upload</code>, <code>upload_submissions_step</code> → writes <code>report.json</code> with artifact paths.</p>
+        <p><strong>Interactive review</strong> (<code>review_matches_step</code> / <code>_prompt_for_record</code>): for each <code>MatchRecord</code>, candidates are re-ranked with <code>rank_candidates</code>; the menu shows the <strong>top 5</strong> by score. Choices: a <strong>digit</strong> to select (empty input defaults to <code>1</code>), <strong>r</strong> rename local name and re-rank, <strong>s</strong> skip with optional note, <strong>u</strong> enter a Canvas <code>user_id</code> manually. Conflicts with another local submission already claiming the same <code>user_id</code> prompt for confirmation. Auto-accepted rows skip the menu unless <code>--yes</code> changes behavior for ambiguous rows.</p>
+        <p><strong><code>merge_rosters</code>:</strong> when API students exist, builds a <code>user_id</code> map from Canvas; for each CSV student with a matching <code>user_id</code>, fills empty <code>section</code>, <code>sis_user_id</code>, and <code>login_id</code> from the CSV. Returns CSV-only roster if the API list is empty; otherwise sorted merged API students.</p>
+        <p><strong><code>validate_assignment_for_upload</code>:</strong> requires <code>online_upload</code> in assignment <code>submission_types</code>; if <code>require_unpublished_assignment</code> is true, rejects published assignments so students cannot self-submit while you upload on their behalf.</p>
+
+        <h3>export_parser.py</h3>
+        <p><code>inspect_exports</code> walks each export root: reads <code>session-summary.json</code>, then each <code>submissions/*/summary.json</code> with sibling <code>scans/</code>. Scan files are sorted with <code>_page_sort_key</code> using regex <code>page-(\d+)</code> in the filename; non-matching names sort after. <code>build_submission_pdf</code> from <code>pdf.py</code> writes per-student PDFs under <code>inspect/pdfs/</code>. <code>ensure_unique_student_names</code> enforces unique local names for the combined dataset. Outputs: <code>inspect/local_dataset.json</code>, <code>inspect/local_submissions.csv</code>, and <code>inspect/session_csv_snapshots/</code> (via <code>_write_session_csv_snapshots</code>).</p>
+
+        <h3>matching.py</h3>
+        <p><code>score_name_match(left, right) -> (int 0–100, str reason)</code>: <code>normalize_name</code> applies NFKC, <code>casefold</code>, replaces non-alphanumeric runs with spaces; <code>ascii_fold</code> NFKD plus ASCII strip. Token-sort strings sort tokens alphabetically then join. Scoring: <code>exact_normalized</code> (100), <code>exact_ascii</code> (100), <code>exact_token_set</code> (98); else max of <code>fuzzy_full</code>, <code>fuzzy_ascii</code>, <code>fuzzy_token_sort</code> from <code>difflib.SequenceMatcher</code> ratios × 100 (rounded).</p>
+        <p><code>classify_match</code> / <code>_classify_match</code>: let <code>margin = top_score - (runner_up_score or 0)</code>. Status <strong>auto</strong> if (<code>top_score &gt; match_auto_accept_score</code> and <code>margin &gt;= match_margin</code>) <em>or</em> (<code>top_score &gt; match_review_floor</code> and not <code>name_needs_review</code> and <code>margin &gt;= match_margin</code>). Otherwise <strong>needs_review</strong> with reason <code>name_needs_review</code> if the export flagged the name, else the top candidate’s fuzzy reason. After building records, <code>_flag_duplicate_auto_matches</code> sets <code>duplicate_candidate</code> / <code>duplicate_auto_match</code> when multiple <strong>auto</strong> rows share the same <code>matched_user_id</code>.</p>
+
+        <h3>api.py</h3>
+        <p><code>CanvasAPI</code> dataclass: <code>base_url</code>, <code>token</code>, <code>timeout_seconds=60</code>.</p>
+        <ul>
+          <li><code>list_course_students</code> — GET enrollments with pagination; follows <code>Link</code> header <code>rel="next"</code>.</li>
+          <li><code>get_assignment</code> / <code>update_assignment</code> — read/update assignment; form bodies are URL-encoded.</li>
+          <li><code>upload_submission_file</code> — POST initiate to <code>.../submissions/{user_id}/files</code> with name/size/content_type; then <code>_multipart_upload</code> to Canvas storage with returned <code>upload_params</code>; JSON body must include file <code>id</code>.</li>
+          <li><code>submit_file_on_behalf</code> — POST <code>.../submissions</code> with <code>online_upload</code>, <code>file_ids</code>, <code>user_id</code>.</li>
+          <li><code>grade_submission</code> — PUT <code>.../submissions/{user_id}</code> with <code>submission[posted_grade]</code> and <code>prefer_points_over_scheme=true</code>.</li>
+          <li><code>update_assignment_grades</code> — POST <code>.../submissions/update_grades</code> with <code>grade_data[user_id][posted_grade]</code> entries.</li>
+          <li><code>get_progress</code> / <code>wait_for_progress</code> — poll <code>/api/v1/progress/{id}</code> until <code>completed</code> or <code>failed</code>, or timeout (default 300s poll window).</li>
+        </ul>
+        <p><code>_request_json</code>: Bearer <code>Authorization</code>, optional <code>application/x-www-form-urlencoded</code> body; on <code>HTTPError</code>, reads the body and raises <code>CanvasAPIError</code> with status and detail. <code>_multipart_upload</code> builds custom <code>multipart/form-data</code> with a UUID boundary; uses an opener with <code>_NoRedirectHandler</code> so redirects are not auto-followed—301/302/303 are handled by reading <code>Location</code> and issuing a follow-up GET. <code>token_from_env(var)</code> reads <code>os.environ</code> and raises <code>CanvasAPIError</code> if missing/blank.</p>
+        <p><code>CanvasAPIError</code> subclasses <code>RuntimeError</code>.</p>
+
+        <h3>csv_tools.py</h3>
+        <p><code>load_gradebook_roster</code>: opens CSV with UTF-8 BOM; <code>DictReader</code> rows skip blank names and rows whose name is <code>Points Possible</code>. Header aliases: student name (<code>Student Name</code>, <code>Student</code>), ID (<code>Student ID</code>, <code>ID</code>), SIS (<code>SIS User ID</code>), login (<code>SIS Login ID</code>, <code>Login ID</code>); <code>Section</code> column when present.</p>
+        <p><code>build_grade_import_csv</code>: reads the template gradebook CSV, requires <code>assignment_column</code> in headers or raises <code>ValueError</code> listing available columns; matches locked rows by template <code>Student ID</code> / <code>ID</code> to <code>final_user_id</code>; writes scores into that column and preserves all other columns to <code>output_path</code>.</p>
+
+        <h3>pdf.py</h3>
+        <p><code>build_submission_pdf(scan_paths, output_path)</code>: if there is a single <code>.pdf</code> input, copies it with <code>shutil.copyfile</code>. For multiple images, only <code>.jpg</code>/<code>.jpeg</code> are supported. <code>jpeg_info</code> parses JPEG markers to read width, height, and component-derived colorspace (<code>/DeviceGray</code>, <code>/DeviceRGB</code>, <code>/DeviceCMYK</code>). <code>_build_pdf_bytes</code> emits minimal PDF 1.4 with one page per image: DCTDecode streams embed the raw JPEG bytes; content streams scale and paint each <code>/ImN</code> XObject; xref table and trailer complete the file.</p>
+
+        <h2 id="data-flow">Data Flow</h2>
+        <ol>
+          <li><strong>HGrader export</strong> — Folder tree with <code>session-summary.json</code>, <code>submissions/&lt;id&gt;/summary.json</code>, and <code>scans/</code> images (and optional single PDF).</li>
+          <li><strong>Inspect</strong> — <code>inspect_exports</code> produces <code>LocalDataset</code> JSON, per-submission CSV snapshot, session CSV copies, and <strong>per-student PDFs</strong> under <code>inspect/pdfs/</code>.</li>
+          <li><strong>Canvas roster</strong> — API students (and optional gradebook CSV) merged to <code>roster/roster.json</code> (+ CSV mirror).</li>
+          <li><strong>Match</strong> — <code>match_manifest.json</code> / <code>.csv</code> with ranked candidates and statuses (<code>auto</code>, <code>needs_review</code>, <code>unmatched</code>, <code>duplicate_candidate</code>).</li>
+          <li><strong>Review</strong> — Interactive or <code>--yes</code> flow writes <code>locked_manifest.json</code> (and CSV): final <code>user_id</code>, names, SIS/login/section, skip/matched.</li>
+          <li><strong>Grades</strong> — Either <code>gradebook/grade_import.csv</code> from template + locked rows, or <code>grades_api/grade_post_results.json</code> from bulk (default) or per-user PUT in <code>post_grades_step</code> when bulk is disabled in code.</li>
+          <li><strong>Upload</strong> — <code>uploads/upload_results.json</code> (+ CSV) from submission file API; assignment may be set to manual posting / locked per config.</li>
+          <li><strong>Report</strong> — <code>report.json</code> at run root lists paths to the main artifacts produced in that run.</li>
+        </ol>
+
+        <h2 id="config-reference">Configuration Reference</h2>
+        <p>All keys are optional unless you rely on them for a given command; types reflect <code>CanvasConnectConfig</code> and <code>config.example.toml</code>.</p>
+        <table>
+          <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>export_paths</code></td><td>array of strings</td><td><code>[]</code></td><td>HGrader export directories. Use instead of legacy <code>export_path</code>.</td></tr>
+            <tr><td><code>export_path</code></td><td>string</td><td>—</td><td>Legacy single path; becomes a one-element <code>export_paths</code> when <code>export_paths</code> omitted.</td></tr>
+            <tr><td><code>canvas_base_url</code></td><td>string</td><td><code>""</code></td><td>Canvas instance origin (no trailing slash required; code strips).</td></tr>
+            <tr><td><code>course_id</code></td><td>integer</td><td>unset</td><td>Course context for roster, assignment, uploads, grades.</td></tr>
+            <tr><td><code>assignment_id</code></td><td>integer</td><td>unset</td><td>Assignment for uploads and grade posting.</td></tr>
+            <tr><td><code>token_env_var</code></td><td>string</td><td><code>CANVAS_API_TOKEN</code></td><td>Environment variable name holding the API token.</td></tr>
+            <tr><td><code>assignment_column</code></td><td>string</td><td><code>""</code></td><td>Exact header from Canvas gradebook export; required for CSV grade path if not passed on CLI.</td></tr>
+            <tr><td><code>output_root</code></td><td>string</td><td><code>CanvasConnect/output</code></td><td>Parent directory for timestamped run folders.</td></tr>
+            <tr><td><code>match_auto_accept_score</code></td><td>integer</td><td><code>95</code></td><td>High-confidence auto-match threshold (with margin).</td></tr>
+            <tr><td><code>match_review_floor</code></td><td>integer</td><td><code>90</code></td><td>Lower bound for auto when name is not flagged and margin is sufficient.</td></tr>
+            <tr><td><code>match_margin</code></td><td>integer</td><td><code>5</code></td><td>Minimum gap between best and runner-up scores for auto acceptance.</td></tr>
+            <tr><td><code>require_unpublished_assignment</code></td><td>boolean</td><td><code>true</code></td><td>Reject published assignments before upload to avoid student self-submission while acting on their behalf.</td></tr>
+            <tr><td><code>lock_assignment_after_upload</code></td><td>boolean</td><td><code>true</code></td><td>After uploads, set assignment <code>lock_at</code> to now (UTC ISO Z).</td></tr>
+            <tr><td><code>enforce_manual_post_policy</code></td><td>boolean</td><td><code>true</code></td><td>Set assignment to post grades manually before API post and optionally after upload.</td></tr>
+            <tr><td><code>request_timeout_seconds</code></td><td>integer</td><td><code>60</code></td><td>Per-request timeout for <code>urllib</code> calls.</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="pipeline">Pipeline Flow</h2>
+<pre><code>┌─────────────────┐
+│ inspect-export  │  Parse exports → LocalDataset + PDFs
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│  load-roster    │  Canvas API + optional CSV → merged roster
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│    match        │  Local names → MatchManifest
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│ review-matches  │  LockedManifest (interactive or --yes)
+└────────┬────────┘
+         ▼
+    ┌────┴────┐
+    ▼         ▼
+┌────────┐ ┌──────────┐
+│ CSV    │ │ API      │  Grade import file vs. post_grades_step
+│ import │ │ posting  │
+└────────┘ └──────────┘
+              │
+              ▼
+       ┌──────────────┐
+       │ upload-subs  │  Optional; skipped with run --skip-upload
+       └──────────────┘</code></pre>
+
+        <p>Run directory layout (names from code; prefix is <code>&lt;export-label&gt;__&lt;UTC-timestamp&gt;</code>):</p>
+<pre><code>output/&lt;label&gt;__20260115T103000Z/
+├── inspect/              # local_dataset.json, local_submissions.csv, pdfs/, session_csv_snapshots/
+├── roster/               # roster.json, roster.csv
+├── match/                # match_manifest.*, locked_manifest.*
+├── gradebook/            # grade_import.csv (CSV path)
+├── grades_api/           # grade_post_results.json (API path)
+├── uploads/              # upload_results.json, upload_results.csv
+└── report.json</code></pre>
+
+        <h2 id="canvas-api">Canvas API Client</h2>
+        <p>The <code>CanvasAPI</code> dataclass in <code>api.py</code> wraps these REST paths (relative to <code>canvas_base_url</code>):</p>
+        <table>
+          <thead><tr><th>Method</th><th>Endpoint</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td>GET</td><td><code>/api/v1/courses/{course_id}/users</code></td><td>Roster (students only, paginated)</td></tr>
+            <tr><td>GET</td><td><code>/api/v1/courses/{course_id}/assignments/{assignment_id}</code></td><td>Assignment JSON for validation</td></tr>
+            <tr><td>PUT</td><td><code>/api/v1/courses/{course_id}/assignments/{assignment_id}</code></td><td>Update assignment (manual post, lock)</td></tr>
+            <tr><td>POST</td><td><code>.../assignments/{assignment_id}/submissions/{user_id}/files</code></td><td>Initiate upload</td></tr>
+            <tr><td>POST</td><td><code>.../assignments/{assignment_id}/submissions</code></td><td>Submit uploaded file on behalf of student</td></tr>
+            <tr><td>PUT</td><td><code>.../assignments/{assignment_id}/submissions/{user_id}</code></td><td>Post grade for one student</td></tr>
+            <tr><td>POST</td><td><code>.../assignments/{assignment_id}/submissions/update_grades</code></td><td>Bulk grades → progress id</td></tr>
+            <tr><td>GET</td><td><code>/api/v1/progress/{id}</code></td><td>Bulk job status</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="matching-algo">Matching Algorithm</h2>
+        <ol>
+          <li>For each local submission, <code>rank_candidates</code> scores every roster name with <code>score_name_match</code> and sorts by descending score, then name, then <code>user_id</code>.</li>
+          <li>The top few candidates are stored on each <code>MatchRecord</code> (three in the initial manifest; the interactive UI recomputes and can show five).</li>
+          <li><strong>Auto</strong> when the classifier accepts per <code>match_auto_accept_score</code>, <code>match_review_floor</code>, <code>match_margin</code>, and <code>name_needs_review</code> as implemented in <code>_classify_match</code>.</li>
+          <li><strong>Needs review</strong> when scores are ambiguous, margin is too small, or the export set <code>name_needs_review</code>.</li>
+          <li><strong>Duplicate detection</strong> — after auto classification, <code>_flag_duplicate_auto_matches</code> demotes rows that share the same auto <code>user_id</code> to <code>duplicate_candidate</code>.</li>
+          <li>Manifests are written as JSON and CSV for audit and spreadsheet use.</li>
+        </ol>
+
+        <h2 id="error-handling">Error Handling</h2>
+        <table>
+          <thead><tr><th>Mechanism</th><th>When</th></tr></thead>
+          <tbody>
+            <tr><td><code>CanvasAPIError</code></td><td>HTTP failures from Canvas (including missing token via <code>token_from_env</code>), upload errors, multipart redirect issues, progress timeouts.</td></tr>
+            <tr><td><code>ValueError</code></td><td>Validation: empty roster, missing Canvas fields for API steps, assignment not allowing uploads, published assignment when disallowed, missing assignment column in template CSV, empty export path list in parser, etc.</td></tr>
+            <tr><td><code>RuntimeError</code></td><td>User cancellation: <code>run_pipeline</code> confirm prompts, upload confirmation declined in <code>upload_submissions_step</code>.</td></tr>
+            <tr><td><code>FileNotFoundError</code></td><td>Missing export directory, missing <code>submissions</code> folder, or missing per-export files expected during inspect.</td></tr>
+            <tr><td><code>SystemExit</code></td><td>CLI resolution of export paths when neither <code>--export</code> nor config paths are set.</td></tr>
+            <tr><td><code>PDFError</code> (<code>pdf.py</code>)</td><td>Invalid or unsupported scan inputs when building submission PDFs.</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="testing">Testing</h2>
+<pre><code>cd CanvasConnect
+python -m unittest discover -s tests</code></pre>
+        <p>Tests live in <code>CanvasConnect/tests/</code> and cover export parsing, matching, CSV helpers, pipeline behavior, and PDF assembly. Canvas HTTP is not required for the default unit suite.</p>
+
+        <h2 id="extension">Extension Points</h2>
+        <ul>
+          <li><strong>Other LMS backends</strong> — mirror <code>CanvasAPI</code> and token handling for a different REST surface.</li>
+          <li><strong>Matching</strong> — extend <code>score_name_match</code> or add pre-filters (e.g. email, SIS ID) before fuzzy name rank.</li>
+          <li><strong>Exports</strong> — adjust <code>export_parser.py</code> if HGrader’s on-disk layout or <code>summary.json</code> fields change.</li>
+          <li><strong>Automation</strong> — call <code>run_pipeline</code> or individual <code>*_step</code> functions from scripts; use <code>--yes</code> for non-interactive runs where appropriate.</li>
+        </ul>
+
+        <div class="next-steps">
+          <h3>Next Steps</h3>
+          <div class="next-links">
+            <a href="../../hgrader/developer/index.html" class="next-link">
+              <div><div class="next-link-title">HGrader Dev Guide</div><div class="next-link-desc">iOS app architecture</div></div>
+              <span class="next-link-arrow">→</span>
+            </a>
+            <a href="../user-guide/index.html" class="next-link">
+              <div><div class="next-link-title">User Guide</div><div class="next-link-desc">Configuration and usage</div></div>
+              <span class="next-link-arrow">→</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div style="display:flex;align-items:center;gap:var(--space-3)">
+        <span class="logo-icon" style="width:24px;height:24px"><img src="../../images/app-icon.png" alt=""></span>
+        <span>&copy; 2026 HGrader</span>
+      </div>
+      <div class="footer-links">
+        <a href="../../hgrader/index.html">HGrader</a>
+        <a href="../index.html">CanvasConnect</a>
+        <a href="https://github.com/skysky2333/autoGrader_ios" target="_blank">GitHub</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../../js/main.js"></script>
+</body>
+</html>

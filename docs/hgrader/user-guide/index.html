@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HGrader User Guide — HGrader</title>
+  <link rel="icon" type="image/png" href="../../images/app-icon.png">
+  <link rel="stylesheet" href="../../css/styles.css">
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../../index.html" class="logo">
+        <span class="logo-icon"><img src="../../images/app-icon.png" alt="HGrader"></span>
+        <span>HGrader</span>
+      </a>
+      <nav class="nav-links" id="nav-links">
+        <a href="../../index.html" class="nav-link">Home</a>
+        <div class="nav-dropdown">
+          <a href="#" class="nav-link active">HGrader <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></a>
+          <div class="nav-dropdown-menu">
+            <a href="../index.html" class="dropdown-item"><span class="dropdown-label">Overview</span><span class="dropdown-desc">What HGrader does and why</span></a>
+            <a href="index.html" class="dropdown-item"><span class="dropdown-label">User Guide</span><span class="dropdown-desc">How to use HGrader</span></a>
+            <a href="../developer/index.html" class="dropdown-item"><span class="dropdown-label">Developer Guide</span><span class="dropdown-desc">Architecture and internals</span></a>
+          </div>
+        </div>
+        <div class="nav-dropdown">
+          <a href="#" class="nav-link">CanvasConnect <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></a>
+          <div class="nav-dropdown-menu">
+            <a href="../../canvasconnect/index.html" class="dropdown-item"><span class="dropdown-label">Overview</span><span class="dropdown-desc">Bridge grading results to Canvas</span></a>
+            <a href="../../canvasconnect/user-guide/index.html" class="dropdown-item"><span class="dropdown-label">User Guide</span><span class="dropdown-desc">Configuration and usage</span></a>
+            <a href="../../canvasconnect/developer/index.html" class="dropdown-item"><span class="dropdown-label">Developer Guide</span><span class="dropdown-desc">Modules and API reference</span></a>
+          </div>
+        </div>
+        <a href="../../workflows/end-to-end.html" class="nav-link">Workflows</a>
+      </nav>
+      <div style="display:flex;align-items:center;gap:var(--space-2)">
+        <a href="https://github.com/skysky2333/autoGrader_ios" class="nav-github" aria-label="GitHub"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
+        <button class="mobile-toggle" aria-label="Toggle navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+    <aside class="docs-sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">HGrader User Guide</div>
+        <a href="#" class="sidebar-link active">Getting Started</a>
+        <a href="#setup" class="sidebar-link">Setup &amp; API Key</a>
+        <a href="#sessions" class="sidebar-link">Grading Sessions</a>
+        <a href="#scanning" class="sidebar-link">Scanning</a>
+        <a href="#rubric" class="sidebar-link">Rubric Generation</a>
+        <a href="#grading" class="sidebar-link">Grading Workflow</a>
+        <a href="#review" class="sidebar-link">Reviewing Results</a>
+        <a href="#export" class="sidebar-link">Exporting</a>
+        <a href="#troubleshooting" class="sidebar-link">Troubleshooting</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Related</div>
+        <a href="../index.html" class="sidebar-link">HGrader Overview</a>
+        <a href="../developer/index.html" class="sidebar-link">Developer Guide</a>
+        <a href="../../canvasconnect/user-guide/index.html" class="sidebar-link">CanvasConnect Guide</a>
+        <a href="../../workflows/end-to-end.html" class="sidebar-link">End-to-End Workflow</a>
+      </div>
+    </aside>
+
+    <main class="docs-main">
+      <button class="sidebar-toggle" aria-label="Toggle sidebar">☰ Menu</button>
+
+      <nav class="breadcrumbs">
+        <a href="../../index.html">Docs</a> <span class="sep">/</span>
+        <a href="../index.html">HGrader</a> <span class="sep">/</span>
+        <span>User Guide</span>
+      </nav>
+
+      <div class="page-header">
+        <span class="badge badge-green">User Guide</span>
+        <h1 class="mt-4">HGrader User Guide</h1>
+        <p class="subtitle">Everything you need to scan, grade, review, and export assignments using HGrader on your iPhone.</p>
+      </div>
+
+      <div class="docs-content">
+
+        <h2 id="setup">Setup &amp; API Key</h2>
+        <p>Before your first grading session, configure your OpenAI API key:</p>
+        <ol>
+          <li>Open HGrader and tap the <strong>Settings</strong> icon (gear) in the top-right corner of the session list.</li>
+          <li>Enter your <strong>OpenAI API key</strong>. The key is stored securely in the iOS Keychain and never leaves your device except in API requests to OpenAI.</li>
+          <li>Optionally configure default model preferences for rubric generation, grading, and validation.</li>
+        </ol>
+
+        <div class="callout callout-warning">
+          <div class="callout-title">API costs</div>
+          Each scan sent for rubric generation or grading incurs OpenAI API usage. Monitor your usage through the OpenAI dashboard.
+        </div>
+
+        <div class="device-iphone" style="max-width:180px;margin:var(--space-4) 0"><img src="../../app_screenshots/settings.PNG" alt="HGrader Settings screen showing API key configuration"></div>
+
+        <h2 id="sessions">Grading Sessions</h2>
+        <p>A grading session represents one assignment — from blank master to scored submissions.</p>
+
+        <h3>Creating a Session</h3>
+        <ol>
+          <li>From the session list, tap <strong>New Session</strong>.</li>
+          <li>Choose the AI model for <strong>answer key generation</strong> (which model analyzes the blank assignment).</li>
+          <li>Choose the AI model for <strong>grading</strong> (which model scores student work).</li>
+          <li>Optionally enable a <strong>validation model</strong> for a second-pass accuracy check.</li>
+          <li>Configure grading options: integer-only points, relaxed grading, and reasoning verbosity.</li>
+          <li>Tap <strong>Create</strong> to open the session.</li>
+        </ol>
+
+        <h3>Session Tabs</h3>
+        <p>Each session has three tabs:</p>
+        <ul>
+          <li><strong>Overview</strong> — Session configuration, scanning controls, summary statistics, and export actions.</li>
+          <li><strong>Rubric</strong> — The generated answer key with per-question details. Review, edit, and approve the rubric here.</li>
+          <li><strong>Results</strong> — All graded submissions. Tap any submission to see question-by-question scores and AI reasoning.</li>
+        </ul>
+
+        <div class="screenshot-grid">
+          <div>
+            <div class="device-iphone" style="max-width:180px;margin:var(--space-4) 0"><img src="../../app_screenshots/create_new_section.PNG" alt="Create new grading session"></div>
+            <p class="screenshot-caption">New session</p>
+          </div>
+          <div>
+            <div class="device-iphone" style="max-width:180px;margin:var(--space-4) 0"><img src="../../app_screenshots/main_page.PNG" alt="Session list main page"></div>
+            <p class="screenshot-caption">Session list</p>
+          </div>
+        </div>
+
+        <h2 id="scanning">Scanning</h2>
+
+        <h3>Scanning the Master Copy</h3>
+        <p>The master copy is the blank (or completed) assignment that defines the rubric:</p>
+        <ol>
+          <li>In the <strong>Overview</strong> tab, tap <strong>Scan Master</strong>.</li>
+          <li>Position the assignment pages in the camera viewfinder. The scanner automatically detects page boundaries.</li>
+          <li>Capture all pages. Tap <strong>Save</strong> when finished.</li>
+          <li>The scanned images are stored in the session and sent to OpenAI for rubric generation.</li>
+        </ol>
+
+        <h3>Scanning Student Work</h3>
+        <p><strong>Batch mode</strong> is the recommended way to grade. Scan an entire stack, specify pages per submission, and HGrader sends everything as an asynchronous batch job to the API. You get results back without waiting per student.</p>
+        <p><strong>Single-student mode</strong> is deprecated. Large frontier models have significant per-request latency, making one-at-a-time scanning impractical for real classes.</p>
+
+        <div class="screenshot-grid">
+          <div>
+            <div class="device-iphone" style="max-width:180px;margin:var(--space-4) 0"><img src="../../app_screenshots/select_scan_method.PNG" alt="Select scanning method"></div>
+            <p class="screenshot-caption">Scan method</p>
+          </div>
+          <div>
+            <div class="device-iphone" style="max-width:180px;margin:var(--space-4) 0"><img src="../../app_screenshots/camera_capture.PNG" alt="Camera capture in progress"></div>
+            <p class="screenshot-caption">Camera capture</p>
+          </div>
+        </div>
+
+        <h2 id="rubric">Rubric Generation</h2>
+        <p>After scanning the master copy, HGrader sends the images to OpenAI using the structured responses API:</p>
+        <ol>
+          <li>The AI analyzes the assignment and produces a <strong>structured rubric</strong> with identified questions, point values, and expected answers.</li>
+          <li>Review the rubric in the <strong>Rubric</strong> tab.</li>
+          <li>Edit any questions, point values, or expected answers as needed.</li>
+          <li>Approve the rubric when it accurately represents the assignment.</li>
+        </ol>
+
+        <div class="callout callout-tip">
+          <div class="callout-title">Tip</div>
+          For best results, use a clean, clearly printed master copy with visible question numbers and point values.
+        </div>
+
+        <div class="screenshot-grid">
+          <div>
+            <div class="device-iphone" style="max-width:180px;margin:var(--space-4) 0"><img src="../../app_screenshots/rubric.PNG" alt="Generated rubric view"></div>
+            <p class="screenshot-caption">Rubric view</p>
+          </div>
+          <div>
+            <div class="device-iphone" style="max-width:180px;margin:var(--space-4) 0"><img src="../../app_screenshots/approve_rubric.PNG" alt="Approve rubric confirmation"></div>
+            <p class="screenshot-caption">Approve rubric</p>
+          </div>
+        </div>
+
+        <h2 id="grading">Grading Workflow</h2>
+        <p>Once the rubric is approved and student work is scanned:</p>
+        <ol>
+          <li>Each student's scanned pages are sent to the grading model along with the rubric.</li>
+          <li>The AI assigns scores per question, with reasoning for each score.</li>
+          <li>If a validation model is enabled, a second pass checks the initial scores for accuracy.</li>
+          <li>Results appear in the <strong>Results</strong> tab as they complete.</li>
+        </ol>
+
+        <h3>Grading Options</h3>
+        <ul>
+          <li><strong>Integer-only points</strong> — Restrict all scores to whole numbers.</li>
+          <li><strong>Relaxed grading</strong> — More lenient scoring for partial credit.</li>
+          <li><strong>Reasoning verbosity</strong> — Control how detailed the AI's explanations are.</li>
+        </ul>
+
+        <div class="device-iphone" style="max-width:180px;margin:var(--space-4) 0"><img src="../../app_screenshots/job_status.PNG" alt="Grading job status and progress"></div>
+
+        <h2 id="review">Reviewing Results</h2>
+        <p>In the <strong>Results</strong> tab, each submission shows:</p>
+        <ul>
+          <li>Student name and total score</li>
+          <li>Per-question breakdown with points earned, points possible, and AI reasoning</li>
+          <li>The original scanned images for reference</li>
+        </ul>
+        <p>You can <strong>manually adjust</strong> any score. Changes are saved immediately to the local database.</p>
+
+        <div class="screenshot-grid">
+          <div>
+            <div class="device-iphone" style="max-width:180px;margin:var(--space-4) 0"><img src="../../app_screenshots/results.PNG" alt="Grading results overview"></div>
+            <p class="screenshot-caption">Results overview</p>
+          </div>
+          <div>
+            <div class="device-iphone" style="max-width:180px;margin:var(--space-4) 0"><img src="../../app_screenshots/question_details.PNG" alt="Per-question score details"></div>
+            <p class="screenshot-caption">Question details</p>
+          </div>
+        </div>
+
+        <h2 id="export">Exporting</h2>
+        <p>HGrader offers two export formats:</p>
+
+        <h3>CSV Export</h3>
+        <p>A simple spreadsheet with student names and total scores. Suitable for manual grade entry.</p>
+
+        <h3>Full Session Package</h3>
+        <p>A ZIP file containing everything CanvasConnect needs:</p>
+        <ul>
+          <li><code>session-summary.json</code> — Session metadata</li>
+          <li><code>session.csv</code> — Flat grade summary</li>
+          <li><code>rubric.json</code> — The generated rubric</li>
+          <li><code>master_scans/</code> — Images of the blank assignment</li>
+          <li><code>submissions/</code> — Per-student folders with <code>summary.json</code> and <code>scans/</code></li>
+        </ul>
+        <p>Use the <strong>Share</strong> button to send the ZIP via AirDrop, Files, email, or any share target.</p>
+
+        <h2 id="troubleshooting">Troubleshooting</h2>
+
+        <h3>Rubric generation fails</h3>
+        <ul>
+          <li>Verify your OpenAI API key is correct and has available credits.</li>
+          <li>Ensure the scanned images are clear and well-lit.</li>
+          <li>Try rescanning with better lighting or a cleaner copy.</li>
+        </ul>
+
+        <h3>Grading produces unexpected scores</h3>
+        <ul>
+          <li>Review the rubric — incorrect expected answers will cascade to grading.</li>
+          <li>Try enabling the validation model for a second accuracy check.</li>
+          <li>For handwritten work, ensure scans are sharp enough for the AI to read.</li>
+        </ul>
+
+        <h3>Export package is incomplete</h3>
+        <ul>
+          <li>Ensure all submissions have finished grading before exporting.</li>
+          <li>Check that the session has a completed rubric.</li>
+        </ul>
+
+        <div class="next-steps">
+          <h3>Next Steps</h3>
+          <div class="next-links">
+            <a href="../../canvasconnect/user-guide/index.html" class="next-link">
+              <div><div class="next-link-title">Post to Canvas</div><div class="next-link-desc">Use CanvasConnect to upload grades</div></div>
+              <span class="next-link-arrow">→</span>
+            </a>
+            <a href="../../workflows/end-to-end.html" class="next-link">
+              <div><div class="next-link-title">End-to-End Workflow</div><div class="next-link-desc">Complete grading pipeline walkthrough</div></div>
+              <span class="next-link-arrow">→</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div style="display:flex;align-items:center;gap:var(--space-3)">
+        <span class="logo-icon" style="width:24px;height:24px"><img src="../../images/app-icon.png" alt=""></span>
+        <span>&copy; 2026 HGrader</span>
+      </div>
+      <div class="footer-links">
+        <a href="../index.html">HGrader</a>
+        <a href="../../canvasconnect/index.html">CanvasConnect</a>
+        <a href="https://github.com/skysky2333/autoGrader_ios" target="_blank">GitHub</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../../js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CanvasConnect User Guide — HGrader</title>
+  <link rel="icon" type="image/png" href="../../images/app-icon.png">
+  <link rel="stylesheet" href="../../css/styles.css">
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../../index.html" class="logo">
+        <span class="logo-icon"><img src="../../images/app-icon.png" alt="HGrader"></span>
+        <span>HGrader</span>
+      </a>
+      <nav class="nav-links" id="nav-links">
+        <a href="../../index.html" class="nav-link">Home</a>
+        <div class="nav-dropdown">
+          <a href="#" class="nav-link">HGrader <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></a>
+          <div class="nav-dropdown-menu">
+            <a href="../../hgrader/index.html" class="dropdown-item"><span class="dropdown-label">Overview</span><span class="dropdown-desc">What HGrader does and why</span></a>
+            <a href="../../hgrader/user-guide/index.html" class="dropdown-item"><span class="dropdown-label">User Guide</span><span class="dropdown-desc">How to use HGrader</span></a>
+            <a href="../../hgrader/developer/index.html" class="dropdown-item"><span class="dropdown-label">Developer Guide</span><span class="dropdown-desc">Architecture and internals</span></a>
+          </div>
+        </div>
+        <div class="nav-dropdown">
+          <a href="#" class="nav-link active">CanvasConnect <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></a>
+          <div class="nav-dropdown-menu">
+            <a href="../index.html" class="dropdown-item"><span class="dropdown-label">Overview</span><span class="dropdown-desc">Bridge grading results to Canvas</span></a>
+            <a href="index.html" class="dropdown-item"><span class="dropdown-label">User Guide</span><span class="dropdown-desc">Configuration and usage</span></a>
+            <a href="../developer/index.html" class="dropdown-item"><span class="dropdown-label">Developer Guide</span><span class="dropdown-desc">Modules and API reference</span></a>
+          </div>
+        </div>
+        <a href="../../workflows/end-to-end.html" class="nav-link">Workflows</a>
+      </nav>
+      <div style="display:flex;align-items:center;gap:var(--space-2)">
+        <a href="https://github.com/skysky2333/autoGrader_ios" class="nav-github" aria-label="GitHub"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
+        <button class="mobile-toggle" aria-label="Toggle navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+    <aside class="docs-sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">CanvasConnect User Guide</div>
+        <a href="#" class="sidebar-link active">Getting Started</a>
+        <a href="#prerequisites" class="sidebar-link">Prerequisites</a>
+        <a href="#configuration" class="sidebar-link">Configuration</a>
+        <a href="#full-pipeline" class="sidebar-link">Full Pipeline</a>
+        <a href="#step-by-step" class="sidebar-link">Step-by-Step Mode</a>
+        <a href="#matching" class="sidebar-link">Student Matching</a>
+        <a href="#grade-posting" class="sidebar-link">Grade Posting</a>
+        <a href="#pdf-upload" class="sidebar-link">PDF Upload</a>
+        <a href="#troubleshooting" class="sidebar-link">Troubleshooting</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Related</div>
+        <a href="../index.html" class="sidebar-link">CanvasConnect Overview</a>
+        <a href="../developer/index.html" class="sidebar-link">Developer Guide</a>
+        <a href="../../hgrader/user-guide/index.html" class="sidebar-link">HGrader User Guide</a>
+        <a href="../../workflows/end-to-end.html" class="sidebar-link">End-to-End Workflow</a>
+      </div>
+    </aside>
+
+    <main class="docs-main">
+      <button class="sidebar-toggle" aria-label="Toggle sidebar">☰ Menu</button>
+
+      <nav class="breadcrumbs">
+        <a href="../../index.html">Docs</a> <span class="sep">/</span>
+        <a href="../index.html">CanvasConnect</a> <span class="sep">/</span>
+        <span>User Guide</span>
+      </nav>
+
+      <div class="page-header">
+        <span class="badge badge-purple">User Guide</span>
+        <h1 class="mt-4">CanvasConnect User Guide</h1>
+        <p class="subtitle">Configure CanvasConnect, match students, post grades, and upload submissions to Canvas LMS.</p>
+      </div>
+
+      <div class="docs-content">
+
+        <h2 id="prerequisites">Prerequisites</h2>
+        <ul>
+          <li><strong>Python 3.11+</strong> installed on your machine</li>
+          <li><strong>Canvas API token</strong> — generate one from Canvas → Account → Settings → New Access Token</li>
+          <li><strong>HGrader export folder(s)</strong> — extracted from the ZIP package produced by HGrader</li>
+          <li><strong>Canvas assignment</strong> — with submission type set to "File Uploads" (for PDF upload) or any type (for grade-only posting)</li>
+        </ul>
+
+        <h2 id="configuration">Configuration</h2>
+        <p>CanvasConnect uses a TOML configuration file. Start by copying the example:</p>
+<pre><code>cd CanvasConnect
+cp config.example.toml config.toml</code></pre>
+
+        <p>Edit <code>config.toml</code> with your settings:</p>
+<pre><code># Paths to extracted HGrader export folder(s)
+export_paths = [
+    "/path/to/exported/session-folder"
+]
+
+# Canvas LMS connection
+canvas_base_url = "https://your-institution.instructure.com"
+course_id = 12345
+assignment_id = 67890
+
+# Authentication — name of the env var holding your token
+token_env_var = "CANVAS_API_TOKEN"
+
+# Optional: column name in Canvas Gradebook CSV
+# assignment_column = "Assignment 1 (12345)"
+
+# Output directory for run artifacts
+output_root = "output"</code></pre>
+
+        <p>Set your Canvas API token as an environment variable:</p>
+<pre><code>export CANVAS_API_TOKEN="your-canvas-api-token"</code></pre>
+
+        <div class="callout callout-warning">
+          <div class="callout-title">Token security</div>
+          Never commit your API token to version control. Use environment variables or a secrets manager.
+        </div>
+
+        <h2 id="full-pipeline">Running the Full Pipeline</h2>
+        <p>The simplest way to use CanvasConnect is the <code>run</code> command, which executes all steps in sequence:</p>
+<pre><code>./canvas-connect run</code></pre>
+
+        <p>This will:</p>
+        <ol>
+          <li>Inspect and validate the export folder(s)</li>
+          <li>Build submission PDFs from scan images</li>
+          <li>Load the Canvas roster</li>
+          <li>Match local students to Canvas users</li>
+          <li>Present matches for interactive review</li>
+          <li>Post grades to Canvas</li>
+          <li>Upload PDF submissions (if configured)</li>
+        </ol>
+
+        <p>All artifacts are saved to a timestamped run directory under <code>output_root</code>.</p>
+
+        <h2 id="step-by-step">Step-by-Step Mode</h2>
+        <p>For more control, run each command individually:</p>
+
+<pre><code># 1. Inspect exports and build PDFs
+./canvas-connect inspect-export
+
+# 2. Load the Canvas roster
+./canvas-connect load-roster
+
+# 3. Match students
+./canvas-connect match
+
+# 4. Review matches interactively
+./canvas-connect review-matches
+
+# 5a. Build a Gradebook import CSV (CSV path)
+./canvas-connect build-grade-csv
+
+# 5b. OR post grades via API (API path)
+./canvas-connect post-grades
+
+# 6. Upload submission PDFs
+./canvas-connect upload-submissions</code></pre>
+
+        <h2 id="matching">Student Matching</h2>
+        <p>CanvasConnect matches student names from HGrader exports to Canvas roster entries using fuzzy string matching:</p>
+
+        <h3>How It Works</h3>
+        <ol>
+          <li>Each local student name is compared against all Canvas roster names using sequence-based similarity scoring.</li>
+          <li>Matches above the <strong>auto-accept threshold</strong> are accepted automatically.</li>
+          <li>Matches above the <strong>review floor</strong> but below auto-accept are flagged for manual review.</li>
+          <li>Matches below the review floor are marked as unmatched.</li>
+        </ol>
+
+        <h3>Interactive Review</h3>
+        <p>The <code>review-matches</code> command presents each flagged match and lets you:</p>
+        <ul>
+          <li><strong>Accept</strong> the suggested match</li>
+          <li><strong>Reject</strong> and leave unmatched</li>
+          <li><strong>Rename</strong> the local student name and re-run matching</li>
+          <li><strong>Manually select</strong> a different Canvas user</li>
+        </ul>
+
+        <h3>Tuning Thresholds</h3>
+        <p>Matching thresholds are configurable in <code>config.toml</code>:</p>
+<pre><code>[matching]
+auto_accept_score = 0.90    # Accept matches scoring above this
+review_floor = 0.60         # Review matches between floor and auto_accept
+margin = 0.10               # Minimum gap between best and second-best match</code></pre>
+
+        <h2 id="grade-posting">Grade Posting</h2>
+        <p>CanvasConnect supports two methods for delivering grades to Canvas:</p>
+
+        <h3>API Posting (Recommended)</h3>
+        <p>The <code>post-grades</code> command posts grades directly via the Canvas REST API. It supports both individual submission updates and bulk grade posting with progress tracking.</p>
+
+        <h3>Gradebook CSV</h3>
+        <p>The <code>build-grade-csv</code> command generates a CSV file compatible with Canvas's Gradebook import. This is useful when you prefer to review and import grades manually, or when API access is restricted.</p>
+
+        <div class="callout callout-info">
+          <div class="callout-title">Gradebook CSV mode</div>
+          To use the CSV path, you need to first download your course Gradebook from Canvas and set the <code>assignment_column</code> in your config to match the column header.
+        </div>
+
+        <h2 id="pdf-upload">PDF Upload</h2>
+        <p>The <code>upload-submissions</code> command:</p>
+        <ol>
+          <li>Assembles a PDF for each student from their scanned images.</li>
+          <li>Initiates a file upload via the Canvas API.</li>
+          <li>Uploads the file to Canvas's storage.</li>
+          <li>Submits the file as an <code>online_upload</code> on behalf of the student.</li>
+        </ol>
+
+        <h3>Safety Controls</h3>
+        <p>By default, CanvasConnect enforces several safety checks:</p>
+        <ul>
+          <li>The assignment must accept <strong>online file uploads</strong>.</li>
+          <li>The assignment should be <strong>unpublished</strong> during upload to prevent student self-submission.</li>
+          <li>After upload, the tool can set <strong>manual grade posting</strong> so grades are not revealed until you're ready.</li>
+          <li>A <strong>lock date</strong> can be set to prevent late submissions after upload.</li>
+        </ul>
+
+        <h2 id="troubleshooting">Troubleshooting</h2>
+
+        <h3>"Export path not found"</h3>
+        <p>Ensure <code>export_paths</code> in <code>config.toml</code> points to the <strong>extracted folder</strong>, not the ZIP file. The folder must contain <code>session-summary.json</code>.</p>
+
+        <h3>"Token not set"</h3>
+        <p>Set the environment variable named in <code>token_env_var</code> (default: <code>CANVAS_API_TOKEN</code>). Verify with <code>echo $CANVAS_API_TOKEN</code>.</p>
+
+        <h3>No matches found</h3>
+        <p>Check that student names in HGrader match the names in Canvas. Use <code>review-matches</code> to manually correct mismatches. Lower the <code>review_floor</code> threshold if needed.</p>
+
+        <h3>Upload fails with 401</h3>
+        <p>Your API token may lack the required permissions. Ensure the token has <strong>course-level access</strong> and the assignment allows file uploads.</p>
+
+        <h3>Bulk grade update times out</h3>
+        <p>Large courses may take longer for Canvas to process bulk updates. CanvasConnect polls the progress endpoint automatically. If it times out, check Canvas's job queue.</p>
+
+        <div class="next-steps">
+          <h3>Next Steps</h3>
+          <div class="next-links">
+            <a href="../developer/index.html" class="next-link">
+              <div><div class="next-link-title">Developer Guide</div><div class="next-link-desc">Module architecture and internals</div></div>
+              <span class="next-link-arrow">→</span>
+            </a>
+            <a href="../../workflows/end-to-end.html" class="next-link">
+              <div><div class="next-link-title">End-to-End Workflow</div><div class="next-link-desc">See the complete grading pipeline</div></div>
+              <span class="next-link-arrow">→</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div style="display:flex;align-items:center;gap:var(--space-3)">
+        <span class="logo-icon" style="width:24px;height:24px"><img src="../../images/app-icon.png" alt=""></span>
+        <span>&copy; 2026 HGrader</span>
+      </div>
+      <div class="footer-links">
+        <a href="../../hgrader/index.html">HGrader</a>
+        <a href="../index.html">CanvasConnect</a>
+        <a href="https://github.com/skysky2333/autoGrader_ios" target="_blank">GitHub</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../../js/main.js"></script>
+</body>
+</html>
