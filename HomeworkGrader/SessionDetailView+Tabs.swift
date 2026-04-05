@@ -32,18 +32,22 @@ extension SessionDetailView {
                 }
             }
         } else {
-            Section("Grade Next Student") {
-                Button {
-                    startStudentScan()
-                } label: {
-                    Label("Scan Student Submission", systemImage: "camera.viewfinder")
-                }
-                .disabled(!hasAPIKey || session.isFinished)
-
+            Section("Student Scans") {
                 Button {
                     startBatchStudentScan()
                 } label: {
-                    Label("Batch Scan Submissions", systemImage: "square.stack.3d.down.right")
+                    Label("Batch Add Student Scans", systemImage: "square.stack.3d.down.right")
+                }
+                .disabled(!hasAPIKey || session.isFinished)
+
+                Menu {
+                    Button {
+                        startStudentScan()
+                    } label: {
+                        Label("Single-Student Scan", systemImage: "camera.viewfinder")
+                    }
+                } label: {
+                    Label("More Options", systemImage: "ellipsis.circle")
                 }
                 .disabled(!hasAPIKey || session.isFinished)
 
@@ -52,10 +56,10 @@ extension SessionDetailView {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("Single scan captures one student at a time, then opens the review screen before saving.")
+                    Text("Batch add is the default workflow. Enter pages per submission, capture the stack, and review the finished results later from the Results tab.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                    Text("Batch scan asks for pages per submission, uploads one asynchronous OpenAI batch job, and returns you to the app immediately. New submissions appear in Results as pending until that batch finishes.")
+                    Text("Use More Options for a single-student fallback when a paper has irregular page counts or you need an immediate one-off review.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
