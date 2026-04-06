@@ -7,7 +7,7 @@ Fully open-source tools for AI-powered assignment grading and Canvas LMS integra
 - **HGrader**: an iPhone app that scans paper assignments, generates rubrics with multimodal AI, and batch-grades entire stacks of student work — any subject, any handwriting, any layout.
 - **CanvasConnect**: a zero-dependency Python CLI that takes HGrader exports, fuzzy-matches students to a Canvas roster, posts grades via the Canvas API, and attaches scanned PDFs as submission comments.
 
-📖 **[Documentation website →](https://skysky2333.github.io/autoGrader_ios/)**
+📖 **[Visit Website for full Guides and Docs →](https://skysky2333.github.io/autoGrader_ios/)**
 
 ## Key Features
 
