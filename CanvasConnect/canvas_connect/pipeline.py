@@ -163,6 +163,8 @@ def post_grades_step(
     config: CanvasConnectConfig,
     run_dir: Path,
     use_bulk_endpoint: bool = True,
+    test_student_only: bool = False,
+    test_source_submission_id: str | None = None,
 ) -> Path:
     if not (config.canvas_base_url and config.course_id and config.assignment_id):
         raise ValueError("Canvas API grading requires canvas_base_url, course_id, and assignment_id in config.")
@@ -170,7 +172,7 @@ def post_grades_step(
     token = token_from_env(config.token_env_var)
     client = CanvasAPI(config.canvas_base_url, token, config.request_timeout_seconds)
     assignment = client.get_assignment(config.course_id, config.assignment_id)
-    validate_assignment_for_upload(assignment, config)
+    validate_assignment_for_grading(assignment)
 
     if config.enforce_manual_post_policy:
         client.update_assignment(
@@ -185,12 +187,21 @@ def post_grades_step(
         for record in locked_records
         if record.final_status == "matched" and record.final_user_id is not None
     ]
+    execution_records, test_mode_message = build_execution_records(
+        matched,
+        config,
+        run_dir,
+        test_student_only=test_student_only,
+        test_source_submission_id=test_source_submission_id,
+    )
+    if test_mode_message:
+        print(test_mode_message)
 
     grades_dir = run_dir / "grades_api"
     grades_dir.mkdir(parents=True, exist_ok=True)
 
     if use_bulk_endpoint:
-        grade_map = {int(record.final_user_id): format_points(record.total_score) for record in matched}
+        grade_map = {int(record.final_user_id): format_points(record.total_score) for record in execution_records}
         progress_payload = client.update_assignment_grades(
             config.course_id,
             config.assignment_id,
@@ -203,18 +214,18 @@ def post_grades_step(
             "mode": "bulk",
             "initial_progress": progress_payload,
             "final_progress": final_progress,
-            "record_count": len(matched),
+            "record_count": len(execution_records),
         }
         json_path = grades_dir / "grade_post_results.json"
         _write_json(json_path, output)
         print(
-            f"Posted {len(matched)} grades through Canvas API "
+            f"Posted {len(execution_records)} grades through Canvas API "
             f"(progress state: {final_progress.get('workflow_state', 'unknown')})."
         )
         return json_path
 
     results: list[dict[str, str | int]] = []
-    for record in matched:
+    for record in execution_records:
         try:
             payload = client.grade_submission(
                 config.course_id,
@@ -258,6 +269,8 @@ def upload_submissions_step(
     config: CanvasConnectConfig,
     run_dir: Path,
     assume_yes: bool = False,
+    test_student_only: bool = False,
+    test_source_submission_id: str | None = None,
 ) -> Path:
     if not (config.canvas_base_url and config.course_id and config.assignment_id):
         raise ValueError("Canvas API upload requires canvas_base_url, course_id, and assignment_id in config.")
@@ -265,17 +278,28 @@ def upload_submissions_step(
     token = token_from_env(config.token_env_var)
     client = CanvasAPI(config.canvas_base_url, token, config.request_timeout_seconds)
     assignment = client.get_assignment(config.course_id, config.assignment_id)
-    validate_assignment_for_upload(assignment, config)
+    validate_assignment_for_comment_workflow(assignment, config)
 
     locked_records = load_locked_manifest(locked_manifest_path)
+    local_dataset = load_local_dataset(run_dir / "inspect" / "local_dataset.json")
+    submissions_by_id = {submission.submission_id: submission for submission in local_dataset.submissions}
     matched = [record for record in locked_records if record.final_status == "matched" and record.final_user_id is not None]
+    execution_records, test_mode_message = build_execution_records(
+        matched,
+        config,
+        run_dir,
+        test_student_only=test_student_only,
+        test_source_submission_id=test_source_submission_id,
+    )
     skipped = [record for record in locked_records if record.final_status != "matched"]
     print(
-        f"Prepared upload for {len(matched)} matched submissions; {len(skipped)} records will be skipped."
+        f"Prepared comment-attachment upload for {len(execution_records)} matched submissions; {len(skipped)} records will be skipped."
     )
-    if matched and not assume_yes:
+    if test_mode_message:
+        print(test_mode_message)
+    if execution_records and not assume_yes:
         print("First targets:")
-        for record in matched[:5]:
+        for record in execution_records[:5]:
             print(f"  - {record.local_student_name} -> {record.final_student_name} ({record.final_user_id})")
         if not confirm("Continue with live Canvas uploads? [y/N]: "):
             raise RuntimeError("Upload cancelled by user.")
@@ -284,38 +308,45 @@ def upload_submissions_step(
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     results: list[UploadResult] = []
-    total_attempts = len(locked_records)
+    total_attempts = len(execution_records)
     processed = 0
-    for record in locked_records:
+    if not any(
+        [
+            config.upload_attach_pdf_as_comment,
+            config.upload_post_grade,
+            config.upload_comment_enabled,
+        ]
+    ):
+        raise ValueError(
+            "Upload configuration would send nothing. Enable at least one of "
+            "upload_attach_pdf_as_comment, upload_post_grade, or upload_comment_enabled."
+        )
+    for record in execution_records:
         processed += 1
-        if record.final_status != "matched" or record.final_user_id is None:
-            results.append(
-                UploadResult(
-                    local_submission_id=record.local_submission_id,
-                    local_student_name=record.local_student_name,
-                    final_user_id=record.final_user_id,
-                    final_student_name=record.final_student_name,
-                    status="skipped",
-                    step="precheck",
-                    message="Record was not locked to a Canvas student.",
-                )
-            )
-            continue
 
         file_id: int | None = None
         try:
-            file_payload = client.upload_submission_file(
+            local_submission = submissions_by_id.get(record.local_submission_id)
+            if local_submission is None:
+                raise ValueError(f"Missing local submission data for {record.local_submission_id}.")
+
+            if config.upload_attach_pdf_as_comment:
+                file_payload = client.upload_submission_comment_file(
+                    config.course_id,
+                    config.assignment_id,
+                    record.final_user_id,
+                    Path(record.pdf_path),
+                )
+                file_id = int(file_payload["id"])
+
+            comment_text = build_comment_text(local_submission, config)
+            submission_payload = client.grade_or_comment_submission(
                 config.course_id,
                 config.assignment_id,
                 record.final_user_id,
-                Path(record.pdf_path),
-            )
-            file_id = int(file_payload["id"])
-            submission_payload = client.submit_file_on_behalf(
-                config.course_id,
-                config.assignment_id,
-                record.final_user_id,
-                file_id,
+                posted_grade=format_points(record.total_score) if config.upload_post_grade else None,
+                comment_text=comment_text,
+                comment_file_ids=[file_id] if file_id is not None else None,
             )
             results.append(
                 UploadResult(
@@ -324,15 +355,15 @@ def upload_submissions_step(
                     final_user_id=record.final_user_id,
                     final_student_name=record.final_student_name,
                     status="uploaded",
-                    step="submit",
+                    step="comment_and_grade",
                     file_id=file_id,
                     submission_id=int(submission_payload.get("id", 0)) if submission_payload.get("id") else None,
-                    message="Uploaded and submitted.",
+                    message=_upload_success_message(config),
                 )
             )
         except CanvasAPIError as error:
             error_text = str(error)
-            error_step = "submit" if "/submissions failed" in error_text and "/submissions/" not in error_text else "upload"
+            error_step = "comment_and_grade" if "/submissions/" in error_text else "comment_file_upload"
             results.append(
                 UploadResult(
                     local_submission_id=record.local_submission_id,
@@ -349,15 +380,30 @@ def upload_submissions_step(
                 f"[{processed}/{total_attempts}] failed at {error_step}: "
                 f"{record.local_student_name} -> {record.final_student_name} ({record.final_user_id})"
             )
+        except ValueError as error:
+            results.append(
+                UploadResult(
+                    local_submission_id=record.local_submission_id,
+                    local_student_name=record.local_student_name,
+                    final_user_id=record.final_user_id,
+                    final_student_name=record.final_student_name,
+                    status="failed",
+                    step="precheck",
+                    file_id=file_id,
+                    message=str(error),
+                )
+            )
+            print(
+                f"[{processed}/{total_attempts}] failed at precheck: "
+                f"{record.local_student_name} -> {record.final_student_name} ({record.final_user_id})"
+            )
 
-    if config.enforce_manual_post_policy or config.lock_assignment_after_upload:
-        fields: dict[str, str] = {}
-        if config.enforce_manual_post_policy:
-            fields["assignment[post_manually]"] = "true"
-        if config.lock_assignment_after_upload:
-            fields["assignment[lock_at]"] = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        if fields:
-            client.update_assignment(config.course_id, config.assignment_id, fields)
+    if config.enforce_manual_post_policy:
+        client.update_assignment(
+            config.course_id,
+            config.assignment_id,
+            {"assignment[post_manually]": "true"},
+        )
 
     json_path = upload_dir / "upload_results.json"
     csv_path = upload_dir / "upload_results.csv"
@@ -379,6 +425,8 @@ def run_pipeline(
     gradebook_csv: Path | None = None,
     assignment_column: str | None = None,
     grade_via_api: bool = False,
+    test_student_only: bool = False,
+    test_source_submission_id: str | None = None,
     upload_submissions: bool = True,
     assume_yes: bool = False,
 ) -> dict[str, str]:
@@ -412,11 +460,24 @@ def run_pipeline(
     elif grade_via_api:
         if not assume_yes and not confirm("Post grades directly to Canvas through the API now? [Y/n]: ", default_yes=True):
             raise RuntimeError("Cancelled before API grade posting.")
-        grade_results_path = post_grades_step(locked_manifest_path, config, run_dir)
+        grade_results_path = post_grades_step(
+            locked_manifest_path,
+            config,
+            run_dir,
+            test_student_only=test_student_only,
+            test_source_submission_id=test_source_submission_id,
+        )
         artifacts["grade_api_results"] = str(grade_results_path)
 
     if upload_submissions:
-        upload_path = upload_submissions_step(locked_manifest_path, config, run_dir, assume_yes=assume_yes)
+        upload_path = upload_submissions_step(
+            locked_manifest_path,
+            config,
+            run_dir,
+            assume_yes=assume_yes,
+            test_student_only=test_student_only,
+            test_source_submission_id=test_source_submission_id,
+        )
         artifacts["upload_results"] = str(upload_path)
 
     _write_json(run_dir / "report.json", artifacts)
@@ -427,6 +488,72 @@ def load_roster_json(path: Path) -> list[CanvasStudent]:
     with path.open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
     return [CanvasStudent.from_dict(row) for row in payload]
+
+
+def build_execution_records(
+    matched_records: list[LockedMatchRecord],
+    config: CanvasConnectConfig,
+    run_dir: Path,
+    test_student_only: bool,
+    test_source_submission_id: str | None,
+) -> tuple[list[LockedMatchRecord], str]:
+    if not test_student_only:
+        return matched_records, ""
+
+    if config.test_student_id is None:
+        raise ValueError("Test-student mode requires test_student_id in config.toml.")
+    if not matched_records:
+        raise ValueError("No matched records are available to use as a test-student source.")
+
+    source_submission_id = (test_source_submission_id or config.test_source_local_submission_id or "").strip()
+    source_record = select_test_source_record(matched_records, source_submission_id)
+    test_student_name = resolve_test_student_name(run_dir, config.test_student_id)
+    replay_record = LockedMatchRecord(
+        local_submission_id=source_record.local_submission_id,
+        local_student_name=source_record.local_student_name,
+        total_score=source_record.total_score,
+        max_score=source_record.max_score,
+        pdf_path=source_record.pdf_path,
+        first_scan_path=source_record.first_scan_path,
+        final_status="matched",
+        final_user_id=int(config.test_student_id),
+        final_student_name=test_student_name,
+        final_sis_user_id="",
+        final_login_id="",
+        final_section="",
+        source_status=source_record.source_status,
+        source_reason=source_record.source_reason,
+        reviewer_note=source_record.reviewer_note,
+    )
+    message = (
+        "Test-student mode enabled: replaying "
+        f"{source_record.local_student_name} ({source_record.local_submission_id}) "
+        f"to {test_student_name} ({config.test_student_id})."
+    )
+    return [replay_record], message
+
+
+def select_test_source_record(
+    matched_records: list[LockedMatchRecord],
+    source_submission_id: str,
+) -> LockedMatchRecord:
+    if source_submission_id:
+        for record in matched_records:
+            if record.local_submission_id == source_submission_id:
+                return record
+        raise ValueError(
+            f"Configured test source submission id '{source_submission_id}' was not found in the locked manifest."
+        )
+    return matched_records[0]
+
+
+def resolve_test_student_name(run_dir: Path, test_student_id: int) -> str:
+    roster_path = run_dir / "roster" / "roster.json"
+    if roster_path.exists():
+        for student in load_roster_json(roster_path):
+            if student.user_id == int(test_student_id):
+                return student.name
+    return f"Test Student {test_student_id}"
 
 
 def merge_rosters(api_students: list[CanvasStudent], csv_students: list[CanvasStudent]) -> list[CanvasStudent]:
@@ -451,12 +578,13 @@ def validate_assignment_for_upload(assignment: dict, config: CanvasConnectConfig
     if "online_upload" not in submission_types:
         raise ValueError("Canvas assignment does not allow online file uploads.")
 
-    published = bool(assignment.get("published"))
-    if config.require_unpublished_assignment and published:
-        raise ValueError(
-            "Canvas assignment is published. To keep exams hidden and avoid student self-submissions, "
-            "create it unpublished before running uploads."
-        )
+def validate_assignment_for_grading(assignment: dict) -> None:
+    if assignment.get("id") is None:
+        raise ValueError("Canvas assignment lookup did not return an assignment id.")
+
+
+def validate_assignment_for_comment_workflow(assignment: dict, config: CanvasConnectConfig) -> None:
+    validate_assignment_for_grading(assignment)
 
 
 def confirm(prompt: str, default_yes: bool = False) -> bool:
@@ -484,6 +612,73 @@ def summarize_status_rows(rows: list[dict[str, str | int]]) -> dict[str, int]:
 def format_points(value: float) -> str:
     numeric = float(value)
     return str(int(numeric)) if numeric.is_integer() else f"{numeric:.2f}".rstrip("0").rstrip(".")
+
+
+def build_comment_text(local_submission, config: CanvasConnectConfig) -> str | None:
+    if not config.upload_comment_enabled:
+        return None
+
+    lines: list[str] = []
+    grades = sorted(
+        local_submission.grades,
+        key=lambda grade: _question_sort_key(str(grade.get("displayLabel", ""))),
+    )
+
+    if config.upload_comment_include_total_score:
+        lines.append(
+            f"Total Score: {format_points(local_submission.total_score)}/{format_points(local_submission.max_score)}"
+        )
+
+    if config.upload_comment_include_question_scores:
+        if lines:
+            lines.append("")
+        lines.append("Question Scores:")
+        for grade in grades:
+            label = str(grade.get("displayLabel", "")).strip() or str(grade.get("questionID", "")).strip() or "Question"
+            awarded = format_points(float(grade.get("awardedPoints", 0)))
+            maximum = format_points(float(grade.get("maxPoints", 0)))
+            lines.append(f"- {label}: {awarded}/{maximum}")
+
+    if config.upload_comment_include_individual_notes:
+        individual_notes = []
+        for grade in grades:
+            feedback = str(grade.get("feedback", "")).strip()
+            if not feedback:
+                continue
+            label = str(grade.get("displayLabel", "")).strip() or str(grade.get("questionID", "")).strip() or "Question"
+            individual_notes.append(f"- {label}: {feedback}")
+        if individual_notes:
+            if lines:
+                lines.append("")
+            lines.append("Individual Notes:")
+            lines.extend(individual_notes)
+
+    notes = (local_submission.overall_notes or "").strip()
+    if config.upload_comment_include_overall_notes and notes:
+        if lines:
+            lines.append("")
+        lines.extend(["Notes:", notes])
+
+    text = "\n".join(lines).strip()
+    return text or None
+
+
+def _question_sort_key(label: str) -> tuple[int, str]:
+    digits = "".join(character for character in label if character.isdigit())
+    if digits:
+        return int(digits), label
+    return 10**9, label.casefold()
+
+
+def _upload_success_message(config: CanvasConnectConfig) -> str:
+    parts: list[str] = []
+    if config.upload_attach_pdf_as_comment:
+        parts.append("attached PDF as comment")
+    if config.upload_comment_enabled:
+        parts.append("posted comment text")
+    if config.upload_post_grade:
+        parts.append("updated grade")
+    return ", ".join(parts).capitalize() + "."
 
 
 def _prompt_for_record(

@@ -11,8 +11,16 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from canvas_connect.config import CanvasConnectConfig
-from canvas_connect.models import CanvasStudent, MatchCandidate, MatchRecord
-from canvas_connect.pipeline import _prompt_for_record, run_pipeline, validate_assignment_for_upload
+from canvas_connect.models import CanvasStudent, LocalSubmission, LockedMatchRecord, MatchCandidate, MatchRecord
+from canvas_connect.pipeline import (
+    _prompt_for_record,
+    build_execution_records,
+    build_comment_text,
+    run_pipeline,
+    validate_assignment_for_comment_workflow,
+    validate_assignment_for_grading,
+    validate_assignment_for_upload,
+)
 
 
 SAMPLE_EXPORT = Path("/Users/sky2333/Downloads/grading/files/Quiz2v3-2026-04-04T15-39-30Z")
@@ -45,13 +53,97 @@ class PipelineTests(unittest.TestCase):
             self.assertTrue(Path(artifacts["locked_manifest"]).exists())
             self.assertTrue(Path(artifacts["grade_csv"]).exists())
 
-    def test_validate_assignment_requires_unpublished_online_upload(self) -> None:
-        config = CanvasConnectConfig(require_unpublished_assignment=True)
+    def test_validate_assignment_requires_online_upload(self) -> None:
+        config = CanvasConnectConfig()
         with self.assertRaisesRegex(ValueError, "online file uploads"):
             validate_assignment_for_upload({"submission_types": ["none"], "published": False}, config)
 
-        with self.assertRaisesRegex(ValueError, "published"):
-            validate_assignment_for_upload({"submission_types": ["online_upload"], "published": True}, config)
+        validate_assignment_for_upload({"submission_types": ["online_upload"], "published": True}, config)
+
+    def test_validate_assignment_for_comment_workflow_accepts_on_paper(self) -> None:
+        config = CanvasConnectConfig()
+        validate_assignment_for_comment_workflow({"id": 123, "submission_types": ["on_paper"], "published": False}, config)
+
+    def test_validate_assignment_for_grading_requires_assignment_id(self) -> None:
+        with self.assertRaisesRegex(ValueError, "assignment id"):
+            validate_assignment_for_grading({})
+
+    def test_build_execution_records_uses_test_student_and_first_source_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            roster_dir = temp_root / "roster"
+            roster_dir.mkdir(parents=True, exist_ok=True)
+            (roster_dir / "roster.json").write_text(
+                '[{"user_id": 186642, "name": "Test Student"}]\n',
+                encoding="utf-8",
+            )
+            locked = [
+                LockedMatchRecord(
+                    local_submission_id="source-1",
+                    local_student_name="Alice Smith",
+                    total_score=9,
+                    max_score=10,
+                    pdf_path="/tmp/alice.pdf",
+                    first_scan_path="/tmp/alice-page-1.jpg",
+                    final_status="matched",
+                    final_user_id=101,
+                    final_student_name="Alice Smith",
+                )
+            ]
+            config = CanvasConnectConfig(test_student_id=186642)
+
+            execution_records, message = build_execution_records(
+                locked,
+                config,
+                temp_root,
+                test_student_only=True,
+                test_source_submission_id=None,
+            )
+
+        self.assertEqual(len(execution_records), 1)
+        self.assertEqual(execution_records[0].final_user_id, 186642)
+        self.assertEqual(execution_records[0].final_student_name, "Test Student")
+        self.assertEqual(execution_records[0].local_submission_id, "source-1")
+        self.assertIn("Alice Smith", message)
+
+    def test_build_execution_records_can_override_source_submission_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            locked = [
+                LockedMatchRecord(
+                    local_submission_id="source-1",
+                    local_student_name="Alice Smith",
+                    total_score=9,
+                    max_score=10,
+                    pdf_path="/tmp/alice.pdf",
+                    first_scan_path="/tmp/alice-page-1.jpg",
+                    final_status="matched",
+                    final_user_id=101,
+                    final_student_name="Alice Smith",
+                ),
+                LockedMatchRecord(
+                    local_submission_id="source-2",
+                    local_student_name="Bob Jones",
+                    total_score=7,
+                    max_score=10,
+                    pdf_path="/tmp/bob.pdf",
+                    first_scan_path="/tmp/bob-page-1.jpg",
+                    final_status="matched",
+                    final_user_id=102,
+                    final_student_name="Bob Jones",
+                ),
+            ]
+            config = CanvasConnectConfig(test_student_id=186642)
+
+            execution_records, _ = build_execution_records(
+                locked,
+                config,
+                temp_root,
+                test_student_only=True,
+                test_source_submission_id="source-2",
+            )
+
+        self.assertEqual(execution_records[0].local_submission_id, "source-2")
 
     def test_prompt_for_record_candidate_choice_does_not_ask_for_note(self) -> None:
         config = CanvasConnectConfig()
@@ -201,6 +293,93 @@ class PipelineTests(unittest.TestCase):
                     {"1": "Alic Smth", "2": "Bob Jones"},
                     config,
                 )
+
+    def test_build_comment_text_includes_total_and_question_scores(self) -> None:
+        submission = LocalSubmission(
+            submission_id="1",
+            folder_name="s1",
+            student_name="Alice Smith",
+            total_score=9,
+            max_score=10,
+            teacher_reviewed=False,
+            name_needs_review=False,
+            created_at=None,
+            overall_notes="Strong work overall.",
+            scan_paths=["/tmp/alice-page-1.jpg"],
+            pdf_path="/tmp/alice.pdf",
+            grades=[
+                {"displayLabel": "1", "awardedPoints": 2, "maxPoints": 2, "feedback": "Correct setup and answer."},
+                {"displayLabel": "2", "awardedPoints": 1, "maxPoints": 2, "feedback": "Arithmetic slip in the final line."},
+            ],
+        )
+
+        text = build_comment_text(submission, CanvasConnectConfig())
+
+        self.assertIn("Total Score: 9/10", text)
+        self.assertIn("- 1: 2/2", text)
+        self.assertIn("- 2: 1/2", text)
+        self.assertIn("Strong work overall.", text)
+
+    def test_build_comment_text_respects_config_toggles(self) -> None:
+        submission = LocalSubmission(
+            submission_id="1",
+            folder_name="s1",
+            student_name="Alice Smith",
+            total_score=9,
+            max_score=10,
+            teacher_reviewed=False,
+            name_needs_review=False,
+            created_at=None,
+            overall_notes="Strong work overall.",
+            scan_paths=["/tmp/alice-page-1.jpg"],
+            pdf_path="/tmp/alice.pdf",
+            grades=[{"displayLabel": "1", "awardedPoints": 2, "maxPoints": 2, "feedback": "Correct setup and answer."}],
+        )
+        config = CanvasConnectConfig(
+            upload_comment_enabled=True,
+            upload_comment_include_total_score=False,
+            upload_comment_include_question_scores=False,
+            upload_comment_include_individual_notes=False,
+            upload_comment_include_overall_notes=True,
+        )
+
+        text = build_comment_text(submission, config)
+
+        self.assertNotIn("Total Score:", text)
+        self.assertNotIn("Question Scores:", text)
+        self.assertIn("Strong work overall.", text)
+
+    def test_build_comment_text_can_include_individual_notes(self) -> None:
+        submission = LocalSubmission(
+            submission_id="1",
+            folder_name="s1",
+            student_name="Alice Smith",
+            total_score=9,
+            max_score=10,
+            teacher_reviewed=False,
+            name_needs_review=False,
+            created_at=None,
+            overall_notes="Strong work overall.",
+            scan_paths=["/tmp/alice-page-1.jpg"],
+            pdf_path="/tmp/alice.pdf",
+            grades=[
+                {"displayLabel": "1", "awardedPoints": 2, "maxPoints": 2, "feedback": "Correct setup and answer."},
+                {"displayLabel": "2", "awardedPoints": 1, "maxPoints": 2, "feedback": "Arithmetic slip in the final line."},
+            ],
+        )
+        config = CanvasConnectConfig(
+            upload_comment_enabled=True,
+            upload_comment_include_total_score=False,
+            upload_comment_include_question_scores=False,
+            upload_comment_include_individual_notes=True,
+            upload_comment_include_overall_notes=False,
+        )
+
+        text = build_comment_text(submission, config)
+
+        self.assertIn("Individual Notes:", text)
+        self.assertIn("- 1: Correct setup and answer.", text)
+        self.assertIn("- 2: Arithmetic slip in the final line.", text)
 
     def _write_gradebook_template(self, path: Path) -> None:
         with path.open("w", encoding="utf-8", newline="") as handle:

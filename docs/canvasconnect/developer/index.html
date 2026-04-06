@@ -129,9 +129,9 @@
             <tr><td><code>match</code></td><td><code>--run-dir</code>, <code>--local-dataset</code>, <code>--roster</code></td><td>Defaults: <code>inspect/local_dataset.json</code>, <code>roster/roster.json</code>.</td></tr>
             <tr><td><code>review-matches</code></td><td><code>--run-dir</code>, <code>--manifest</code>, <code>--roster</code>, <code>--yes</code></td><td>Defaults: <code>match/match_manifest.json</code>, <code>roster/roster.json</code>.</td></tr>
             <tr><td><code>build-grade-csv</code></td><td><code>--run-dir</code>, <code>--locked-manifest</code>, <code>--gradebook-csv</code> (required), <code>--assignment-column</code></td><td>Requires assignment column from flag or config.</td></tr>
-            <tr><td><code>post-grades</code></td><td><code>--run-dir</code>, <code>--locked-manifest</code></td><td>API grade post using locked matches.</td></tr>
-            <tr><td><code>upload-submissions</code></td><td><code>--run-dir</code>, <code>--locked-manifest</code>, <code>--yes</code></td><td>Skips upload confirmation when <code>--yes</code>.</td></tr>
-            <tr><td><code>run</code></td><td><code>--export</code> (append), <code>--gradebook-csv</code>, <code>--assignment-column</code>, <code>--grade-via-api</code>, <code>--skip-upload</code>, <code>--yes</code></td><td>End-to-end <code>run_pipeline</code>.</td></tr>
+            <tr><td><code>post-grades</code></td><td><code>--run-dir</code>, <code>--locked-manifest</code>, <code>--test-student-only</code>, <code>--test-source-submission-id</code></td><td>API grade post using locked matches.</td></tr>
+            <tr><td><code>upload-submissions</code></td><td><code>--run-dir</code>, <code>--locked-manifest</code>, <code>--test-student-only</code>, <code>--test-source-submission-id</code>, <code>--yes</code></td><td>Comment-attachment upload; skips confirmation when <code>--yes</code>.</td></tr>
+            <tr><td><code>run</code></td><td><code>--export</code> (append), <code>--gradebook-csv</code>, <code>--assignment-column</code>, <code>--grade-via-api</code>, <code>--test-student-only</code>, <code>--test-source-submission-id</code>, <code>--skip-upload</code>, <code>--yes</code></td><td>End-to-end <code>run_pipeline</code>.</td></tr>
           </tbody>
         </table>
         <p><code>_resolve_export_paths(config, cli_exports)</code>: if the CLI passes <code>--export</code>, those paths win; otherwise uses <code>config.export_paths</code>; if still empty, exits with <code>SystemExit</code> explaining that <code>export_paths</code> or <code>--export</code> is required.</p>
@@ -148,9 +148,16 @@
           <li><code>match_auto_accept_score: int</code> — <code>95</code></li>
           <li><code>match_review_floor: int</code> — <code>90</code></li>
           <li><code>match_margin: int</code> — <code>5</code></li>
-          <li><code>require_unpublished_assignment: bool</code> — <code>True</code></li>
-          <li><code>lock_assignment_after_upload: bool</code> — <code>True</code></li>
+          <li><code>test_student_id: int | None</code> — <code>None</code> (Canvas user ID for test mode)</li>
+          <li><code>test_source_local_submission_id: str</code> — <code>""</code> (optional source submission for test replay)</li>
           <li><code>enforce_manual_post_policy: bool</code> — <code>True</code></li>
+          <li><code>upload_attach_pdf_as_comment: bool</code> — <code>True</code></li>
+          <li><code>upload_post_grade: bool</code> — <code>True</code></li>
+          <li><code>upload_comment_enabled: bool</code> — <code>True</code></li>
+          <li><code>upload_comment_include_total_score: bool</code> — <code>True</code></li>
+          <li><code>upload_comment_include_question_scores: bool</code> — <code>True</code></li>
+          <li><code>upload_comment_include_individual_notes: bool</code> — <code>False</code></li>
+          <li><code>upload_comment_include_overall_notes: bool</code> — <code>True</code></li>
           <li><code>request_timeout_seconds: int</code> — <code>60</code></li>
         </ul>
 
@@ -164,7 +171,8 @@
         <p><strong><code>run_pipeline</code> flow:</strong> <code>make_run_dir</code> → <code>inspect_export_step</code> → <code>load_roster_step</code> → <code>match_step</code> → optional confirm → <code>review_matches_step</code> → if <code>gradebook_csv</code> then <code>build_grade_csv_step</code>, else if <code>grade_via_api</code> then <code>post_grades_step</code> → unless <code>skip_upload</code>, <code>upload_submissions_step</code> → writes <code>report.json</code> with artifact paths.</p>
         <p><strong>Interactive review</strong> (<code>review_matches_step</code> / <code>_prompt_for_record</code>): for each <code>MatchRecord</code>, candidates are re-ranked with <code>rank_candidates</code>; the menu shows the <strong>top 5</strong> by score. Choices: a <strong>digit</strong> to select (empty input defaults to <code>1</code>), <strong>r</strong> rename local name and re-rank, <strong>s</strong> skip with optional note, <strong>u</strong> enter a Canvas <code>user_id</code> manually. Conflicts with another local submission already claiming the same <code>user_id</code> prompt for confirmation. Auto-accepted rows skip the menu unless <code>--yes</code> changes behavior for ambiguous rows.</p>
         <p><strong><code>merge_rosters</code>:</strong> when API students exist, builds a <code>user_id</code> map from Canvas; for each CSV student with a matching <code>user_id</code>, fills empty <code>section</code>, <code>sis_user_id</code>, and <code>login_id</code> from the CSV. Returns CSV-only roster if the API list is empty; otherwise sorted merged API students.</p>
-        <p><strong><code>validate_assignment_for_upload</code>:</strong> requires <code>online_upload</code> in assignment <code>submission_types</code>; if <code>require_unpublished_assignment</code> is true, rejects published assignments so students cannot self-submit while you upload on their behalf.</p>
+        <p><strong><code>validate_assignment_for_grading</code>:</strong> requires the assignment lookup to return an <code>id</code>. <strong><code>validate_assignment_for_comment_workflow</code>:</strong> delegates to <code>validate_assignment_for_grading</code>; used by the comment-attachment upload path. <strong><code>validate_assignment_for_upload</code>:</strong> requires <code>online_upload</code> in assignment <code>submission_types</code> (retained for the legacy file-upload path).</p>
+        <p><strong><code>build_execution_records</code>:</strong> in test-student mode, replays one matched submission to the configured <code>test_student_id</code> by cloning a <code>LockedMatchRecord</code> with the test student's Canvas user ID and name. <strong><code>build_comment_text</code>:</strong> assembles structured score breakdown text from a <code>LocalSubmission</code> and config toggles (total score, question scores, individual notes, overall notes).</p>
 
         <h3>export_parser.py</h3>
         <p><code>inspect_exports</code> walks each export root: reads <code>session-summary.json</code>, then each <code>submissions/*/summary.json</code> with sibling <code>scans/</code>. Scan files are sorted with <code>_page_sort_key</code> using regex <code>page-(\d+)</code> in the filename; non-matching names sort after. <code>build_submission_pdf</code> from <code>pdf.py</code> writes per-student PDFs under <code>inspect/pdfs/</code>. <code>ensure_unique_student_names</code> enforces unique local names for the combined dataset. Outputs: <code>inspect/local_dataset.json</code>, <code>inspect/local_submissions.csv</code>, and <code>inspect/session_csv_snapshots/</code> (via <code>_write_session_csv_snapshots</code>).</p>
@@ -179,7 +187,9 @@
           <li><code>list_course_students</code> — GET enrollments with pagination; follows <code>Link</code> header <code>rel="next"</code>.</li>
           <li><code>get_assignment</code> / <code>update_assignment</code> — read/update assignment; form bodies are URL-encoded.</li>
           <li><code>upload_submission_file</code> — POST initiate to <code>.../submissions/{user_id}/files</code> with name/size/content_type; then <code>_multipart_upload</code> to Canvas storage with returned <code>upload_params</code>; JSON body must include file <code>id</code>.</li>
+          <li><code>upload_submission_comment_file</code> — POST initiate to <code>.../submissions/{user_id}/comments/files</code>; same multipart flow as <code>upload_submission_file</code> but targets the comment attachment endpoint.</li>
           <li><code>submit_file_on_behalf</code> — POST <code>.../submissions</code> with <code>online_upload</code>, <code>file_ids</code>, <code>user_id</code>.</li>
+          <li><code>grade_or_comment_submission</code> — PUT <code>.../submissions/{user_id}</code> with optional <code>submission[posted_grade]</code>, <code>comment[text_comment]</code>, and <code>comment[file_ids][]</code>; supports attaching comment files and updating grades in a single request.</li>
           <li><code>grade_submission</code> — PUT <code>.../submissions/{user_id}</code> with <code>submission[posted_grade]</code> and <code>prefer_points_over_scheme=true</code>.</li>
           <li><code>update_assignment_grades</code> — POST <code>.../submissions/update_grades</code> with <code>grade_data[user_id][posted_grade]</code> entries.</li>
           <li><code>get_progress</code> / <code>wait_for_progress</code> — poll <code>/api/v1/progress/{id}</code> until <code>completed</code> or <code>failed</code>, or timeout (default 300s poll window).</li>
@@ -202,7 +212,7 @@
           <li><strong>Match</strong> — <code>match_manifest.json</code> / <code>.csv</code> with ranked candidates and statuses (<code>auto</code>, <code>needs_review</code>, <code>unmatched</code>, <code>duplicate_candidate</code>).</li>
           <li><strong>Review</strong> — Interactive or <code>--yes</code> flow writes <code>locked_manifest.json</code> (and CSV): final <code>user_id</code>, names, SIS/login/section, skip/matched.</li>
           <li><strong>Grades</strong> — Either <code>gradebook/grade_import.csv</code> from template + locked rows, or <code>grades_api/grade_post_results.json</code> from bulk (default) or per-user PUT in <code>post_grades_step</code> when bulk is disabled in code.</li>
-          <li><strong>Upload</strong> — <code>uploads/upload_results.json</code> (+ CSV) from submission file API; assignment may be set to manual posting / locked per config.</li>
+          <li><strong>Upload</strong> — <code>uploads/upload_results.json</code> (+ CSV) from comment-attachment API; assignment may be set to manual posting per config.</li>
           <li><strong>Report</strong> — <code>report.json</code> at run root lists paths to the main artifacts produced in that run.</li>
         </ol>
 
@@ -222,9 +232,16 @@
             <tr><td><code>match_auto_accept_score</code></td><td>integer</td><td><code>95</code></td><td>High-confidence auto-match threshold (with margin).</td></tr>
             <tr><td><code>match_review_floor</code></td><td>integer</td><td><code>90</code></td><td>Lower bound for auto when name is not flagged and margin is sufficient.</td></tr>
             <tr><td><code>match_margin</code></td><td>integer</td><td><code>5</code></td><td>Minimum gap between best and runner-up scores for auto acceptance.</td></tr>
-            <tr><td><code>require_unpublished_assignment</code></td><td>boolean</td><td><code>true</code></td><td>Reject published assignments before upload to avoid student self-submission while acting on their behalf.</td></tr>
-            <tr><td><code>lock_assignment_after_upload</code></td><td>boolean</td><td><code>true</code></td><td>After uploads, set assignment <code>lock_at</code> to now (UTC ISO Z).</td></tr>
-            <tr><td><code>enforce_manual_post_policy</code></td><td>boolean</td><td><code>true</code></td><td>Set assignment to post grades manually before API post and optionally after upload.</td></tr>
+            <tr><td><code>test_student_id</code></td><td>integer</td><td>unset</td><td>Canvas user ID for test-student mode; used with <code>--test-student-only</code>.</td></tr>
+            <tr><td><code>test_source_local_submission_id</code></td><td>string</td><td><code>""</code></td><td>Local submission ID to replay in test mode; if blank, uses the first matched submission.</td></tr>
+            <tr><td><code>enforce_manual_post_policy</code></td><td>boolean</td><td><code>true</code></td><td>Set assignment to post grades manually before API post and after upload.</td></tr>
+            <tr><td><code>upload_attach_pdf_as_comment</code></td><td>boolean</td><td><code>true</code></td><td>Attach scanned PDF as a submission comment file.</td></tr>
+            <tr><td><code>upload_post_grade</code></td><td>boolean</td><td><code>true</code></td><td>Update the grade in the same upload request.</td></tr>
+            <tr><td><code>upload_comment_enabled</code></td><td>boolean</td><td><code>true</code></td><td>Post a text comment with score breakdown.</td></tr>
+            <tr><td><code>upload_comment_include_total_score</code></td><td>boolean</td><td><code>true</code></td><td>Include total score line in comment text.</td></tr>
+            <tr><td><code>upload_comment_include_question_scores</code></td><td>boolean</td><td><code>true</code></td><td>Include per-question score lines in comment text.</td></tr>
+            <tr><td><code>upload_comment_include_individual_notes</code></td><td>boolean</td><td><code>false</code></td><td>Include per-question feedback notes in comment text.</td></tr>
+            <tr><td><code>upload_comment_include_overall_notes</code></td><td>boolean</td><td><code>true</code></td><td>Include overall notes in comment text.</td></tr>
             <tr><td><code>request_timeout_seconds</code></td><td>integer</td><td><code>60</code></td><td>Per-request timeout for <code>urllib</code> calls.</td></tr>
           </tbody>
         </table>
@@ -276,9 +293,10 @@
             <tr><td>GET</td><td><code>/api/v1/courses/{course_id}/users</code></td><td>Roster (students only, paginated)</td></tr>
             <tr><td>GET</td><td><code>/api/v1/courses/{course_id}/assignments/{assignment_id}</code></td><td>Assignment JSON for validation</td></tr>
             <tr><td>PUT</td><td><code>/api/v1/courses/{course_id}/assignments/{assignment_id}</code></td><td>Update assignment (manual post, lock)</td></tr>
-            <tr><td>POST</td><td><code>.../assignments/{assignment_id}/submissions/{user_id}/files</code></td><td>Initiate upload</td></tr>
+            <tr><td>POST</td><td><code>.../assignments/{assignment_id}/submissions/{user_id}/files</code></td><td>Initiate submission file upload</td></tr>
+            <tr><td>POST</td><td><code>.../assignments/{assignment_id}/submissions/{user_id}/comments/files</code></td><td>Initiate comment file upload</td></tr>
             <tr><td>POST</td><td><code>.../assignments/{assignment_id}/submissions</code></td><td>Submit uploaded file on behalf of student</td></tr>
-            <tr><td>PUT</td><td><code>.../assignments/{assignment_id}/submissions/{user_id}</code></td><td>Post grade for one student</td></tr>
+            <tr><td>PUT</td><td><code>.../assignments/{assignment_id}/submissions/{user_id}</code></td><td>Post grade, comment text, and/or comment file attachments</td></tr>
             <tr><td>POST</td><td><code>.../assignments/{assignment_id}/submissions/update_grades</code></td><td>Bulk grades → progress id</td></tr>
             <tr><td>GET</td><td><code>/api/v1/progress/{id}</code></td><td>Bulk job status</td></tr>
           </tbody>

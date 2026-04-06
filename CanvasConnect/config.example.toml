@@ -5,6 +5,9 @@ export_paths = [
 canvas_base_url = "https://school.instructure.com"
 course_id = 12345
 assignment_id = 67890
+test_student_id = 123123
+# Optional: force test mode to replay a specific local submission id.
+test_source_local_submission_id = ""
 token_env_var = "CANVAS_API_TOKEN"
 
 # Use the exact assignment column header from a Canvas Gradebook export.
@@ -18,9 +21,16 @@ match_auto_accept_score = 95
 match_review_floor = 90
 match_margin = 5
 
-# Assignment protections.
-require_unpublished_assignment = true
-lock_assignment_after_upload = true
+# Grade visibility.
 enforce_manual_post_policy = true
+
+# Comment-attachment upload behavior for on-paper assignments.
+upload_attach_pdf_as_comment = true
+upload_post_grade = true
+upload_comment_enabled = true
+upload_comment_include_total_score = true
+upload_comment_include_question_scores = true
+upload_comment_include_individual_notes = false
+upload_comment_include_overall_notes = true
 
 request_timeout_seconds = 60

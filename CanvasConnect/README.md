@@ -7,8 +7,8 @@ to a manually created Canvas assignment on their behalf.
 
 ## Workflow
 
-1. Create the Canvas assignment manually as an online assignment with `File Uploads`.
-2. Keep the assignment unpublished before running the uploader.
+1. Create the Canvas assignment manually. For the current fallback workflow, use an assignment such as `On Paper`.
+2. Set the assignment posting policy to manual if you want grades hidden until you explicitly release them.
 3. Export your graded session from `HomeworkGrader`.
 4. Download a Canvas Gradebook CSV if you want a Gradebook import file.
 5. Run the staged pipeline:
@@ -26,27 +26,26 @@ The run will:
 - rank fuzzy student-name matches and stop for manual confirmation when needed
 - allow a manual name correction loop that re-runs matching immediately
 - either generate a Canvas Gradebook import CSV or post grades directly through the Canvas API
-- optionally upload PDFs as student submissions through the Canvas API
-- lock the assignment after upload and keep manual grade posting enabled
+- optionally upload PDFs as comment attachments and update grades through the Canvas API
+- keep manual grade posting enabled when configured
 - abort immediately if duplicate local student names are detected, including after a manual name correction
 
-## Assignment Safety Model
+## Release Model
 
-To satisfy the "hidden after upload" and "students cannot submit their own PDF"
-requirements, the uploader enforces these rules by default:
+For the current on-paper fallback workflow:
 
-- the target assignment must already be unpublished before upload starts
-- the target assignment must allow `online_upload`
-- after upload, the assignment is updated to `post_manually=true`
-- after upload, the assignment is locked at the current time so students cannot add
-  late self-submissions if a scan was not uploaded for them
+- `upload-submissions` attaches each scanned PDF as a submission comment attachment
+- `upload-submissions` can also update the grade in the same request
+- `post-grades` remains available as a separate grade-only bulk action
+- `enforce_manual_post_policy=true` keeps grades hidden until you explicitly post them in Canvas
 
-This means your manual workflow should be:
+Recommended manual workflow:
 
-1. Create the assignment unpublished.
-2. Run `CanvasConnect`.
-3. Either import the generated grade CSV or use API grade posting.
-4. Publish and manually post grades later when you are ready.
+1. Create and publish the assignment if your Canvas instance requires published assignments for grade entry.
+2. Set the assignment posting policy to manual.
+3. Run `CanvasConnect`.
+4. Verify the comments and grades as an instructor.
+5. Post grades manually when you are ready for students to see them.
 
 ## Commands
 
@@ -70,3 +69,17 @@ For a command reference:
 
 Copy `CanvasConnect/config.example.toml` to `CanvasConnect/config.toml` and fill in
 your course-specific values. Set one or more export directories in `export_paths`.
+The upload payload is configurable with:
+- `upload_attach_pdf_as_comment`
+- `upload_post_grade`
+- `upload_comment_enabled`
+- `upload_comment_include_total_score`
+- `upload_comment_include_question_scores`
+- `upload_comment_include_individual_notes`
+- `upload_comment_include_overall_notes`
+
+Test mode:
+- set `test_student_id` in config
+- run `upload-submissions --test-student-only` or `post-grades --test-student-only`
+- optionally set `test_source_local_submission_id` or pass `--test-source-submission-id`
+- if no explicit source is set, CanvasConnect replays the first matched submission deterministically

@@ -92,6 +92,32 @@ class CanvasAPI:
             raise CanvasAPIError(f"Upload finished without a file id for {file_path}.")
         return final_payload
 
+    def upload_submission_comment_file(
+        self,
+        course_id: int,
+        assignment_id: int,
+        user_id: int,
+        file_path: Path,
+    ) -> dict:
+        init_payload, _, _ = self._request_json(
+            "POST",
+            self._build_url(
+                f"/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/{user_id}/comments/files"
+            ),
+            form={
+                "name": file_path.name,
+                "size": str(file_path.stat().st_size),
+                "content_type": mimetypes.guess_type(file_path.name)[0] or "application/pdf",
+            },
+        )
+
+        upload_url = init_payload["upload_url"]
+        upload_params = init_payload.get("upload_params", {})
+        final_payload = self._multipart_upload(upload_url, upload_params, file_path)
+        if "id" not in final_payload:
+            raise CanvasAPIError(f"Comment upload finished without a file id for {file_path}.")
+        return final_payload
+
     def submit_file_on_behalf(
         self,
         course_id: int,
@@ -107,6 +133,34 @@ class CanvasAPI:
                 "submission[file_ids][]": str(file_id),
                 "submission[user_id]": str(user_id),
             },
+        )
+        return payload
+
+    def grade_or_comment_submission(
+        self,
+        course_id: int,
+        assignment_id: int,
+        user_id: int,
+        posted_grade: str | None = None,
+        comment_text: str | None = None,
+        comment_file_ids: list[int] | None = None,
+    ) -> dict:
+        form: list[tuple[str, str]] = []
+        if comment_text:
+            form.append(("comment[text_comment]", comment_text))
+        if comment_file_ids:
+            for file_id in comment_file_ids:
+                form.append(("comment[file_ids][]", str(file_id)))
+        if posted_grade is not None:
+            form.append(("submission[posted_grade]", posted_grade))
+            form.append(("prefer_points_over_scheme", "true"))
+
+        payload, _, _ = self._request_json(
+            "PUT",
+            self._build_url(
+                f"/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/{user_id}"
+            ),
+            form_items=form,
         )
         return payload
 
@@ -175,12 +229,18 @@ class CanvasAPI:
         method: str,
         url: str,
         form: dict[str, str] | None = None,
+        form_items: list[tuple[str, str]] | None = None,
         absolute_url: bool = False,
     ) -> tuple[dict | list, dict[str, str], str]:
         body = None
         headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json"}
+        if form is not None and form_items is not None:
+            raise ValueError("Use either form or form_items, not both.")
         if form is not None:
             body = urllib.parse.urlencode(form, doseq=True).encode("utf-8")
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+        elif form_items is not None:
+            body = urllib.parse.urlencode(form_items, doseq=True).encode("utf-8")
             headers["Content-Type"] = "application/x-www-form-urlencoded"
 
         request = urllib.request.Request(

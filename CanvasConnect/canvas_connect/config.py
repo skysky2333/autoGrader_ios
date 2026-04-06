@@ -11,15 +11,22 @@ class CanvasConnectConfig:
     canvas_base_url: str = ""
     course_id: int | None = None
     assignment_id: int | None = None
+    test_student_id: int | None = None
+    test_source_local_submission_id: str = ""
     token_env_var: str = "CANVAS_API_TOKEN"
     assignment_column: str = ""
     output_root: str = "CanvasConnect/output"
     match_auto_accept_score: int = 95
     match_review_floor: int = 90
     match_margin: int = 5
-    require_unpublished_assignment: bool = True
-    lock_assignment_after_upload: bool = True
     enforce_manual_post_policy: bool = True
+    upload_attach_pdf_as_comment: bool = True
+    upload_post_grade: bool = True
+    upload_comment_enabled: bool = True
+    upload_comment_include_total_score: bool = True
+    upload_comment_include_question_scores: bool = True
+    upload_comment_include_individual_notes: bool = False
+    upload_comment_include_overall_notes: bool = True
     request_timeout_seconds: int = 60
 
     @classmethod
@@ -33,15 +40,22 @@ class CanvasConnectConfig:
             canvas_base_url=payload.get("canvas_base_url", ""),
             course_id=payload.get("course_id"),
             assignment_id=payload.get("assignment_id"),
+            test_student_id=payload.get("test_student_id"),
+            test_source_local_submission_id=str(payload.get("test_source_local_submission_id", "") or ""),
             token_env_var=payload.get("token_env_var", "CANVAS_API_TOKEN"),
             assignment_column=payload.get("assignment_column", ""),
             output_root=payload.get("output_root", "CanvasConnect/output"),
             match_auto_accept_score=int(payload.get("match_auto_accept_score", 95)),
             match_review_floor=int(payload.get("match_review_floor", 90)),
             match_margin=int(payload.get("match_margin", 5)),
-            require_unpublished_assignment=bool(payload.get("require_unpublished_assignment", True)),
-            lock_assignment_after_upload=bool(payload.get("lock_assignment_after_upload", True)),
             enforce_manual_post_policy=bool(payload.get("enforce_manual_post_policy", True)),
+            upload_attach_pdf_as_comment=bool(payload.get("upload_attach_pdf_as_comment", True)),
+            upload_post_grade=bool(payload.get("upload_post_grade", True)),
+            upload_comment_enabled=bool(payload.get("upload_comment_enabled", True)),
+            upload_comment_include_total_score=bool(payload.get("upload_comment_include_total_score", True)),
+            upload_comment_include_question_scores=bool(payload.get("upload_comment_include_question_scores", True)),
+            upload_comment_include_individual_notes=bool(payload.get("upload_comment_include_individual_notes", False)),
+            upload_comment_include_overall_notes=bool(payload.get("upload_comment_include_overall_notes", True)),
             request_timeout_seconds=int(payload.get("request_timeout_seconds", 60)),
         )
 

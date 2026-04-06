@@ -73,7 +73,7 @@
 <span style="color:#89D185">✓</span> match             <span style="color:rgba(205,214,244,0.45)">28/28 matched (fuzzy ≥ 0.92)</span>
 <span style="color:#89D185">✓</span> build-grade-csv   <span style="color:rgba(205,214,244,0.45)">grades.csv ready</span>
 <span style="color:#89D185">✓</span> post-grades       <span style="color:rgba(205,214,244,0.45)">submissions updated</span>
-<span style="color:#89D185">✓</span> upload-submissions <span style="color:rgba(205,214,244,0.45)">PDFs attached in SpeedGrader</span>
+<span style="color:#89D185">✓</span> upload-submissions <span style="color:rgba(205,214,244,0.45)">comments + PDFs attached</span>
 
 <span style="color:#6A9955">Done.</span> Pipeline finished in 42s.</code></pre>
           </div>
@@ -112,13 +112,13 @@
       </div>
       <div class="feature-item">
         <div class="feature-icon" style="background:var(--color-purple-light);color:var(--color-purple)">📄</div>
-        <h4>PDF Upload</h4>
-        <p>Uploads assembled PDFs as file submissions so graded work shows up where instructors already review — SpeedGrader.</p>
+        <h4>PDF Attachment</h4>
+        <p>Attaches assembled PDFs as submission comment files so graded work shows up where instructors already review — SpeedGrader.</p>
       </div>
       <div class="feature-item">
         <div class="feature-icon">🛡</div>
-        <h4>Safety Controls</h4>
-        <p>Guards around assignment state, manual posting, and submission locking so you do not accidentally publish too early.</p>
+        <h4>Release Controls</h4>
+        <p>Enforces manual grade posting so you do not accidentally reveal scores before you are ready.</p>
       </div>
     </div>
   </section>
@@ -143,7 +143,7 @@
             <tr><td><code>review-matches</code></td><td>Interactively confirm or fix ambiguous matches before posting.</td></tr>
             <tr><td><code>build-grade-csv</code></td><td>Emit a Canvas-compatible gradebook import CSV when you want a file-based path.</td></tr>
             <tr><td><code>post-grades</code></td><td>Push scores to Canvas submissions via the API.</td></tr>
-            <tr><td><code>upload-submissions</code></td><td>Upload each student PDF as an online upload submission.</td></tr>
+            <tr><td><code>upload-submissions</code></td><td>Attach each student PDF as a submission comment and optionally update the grade.</td></tr>
             <tr><td><code>run</code></td><td>Chain the stages end-to-end from inspection through upload.</td></tr>
           </tbody>
         </table>
@@ -177,7 +177,7 @@
       <div class="card" style="text-align:left">
         <div class="card-icon purple">📝</div>
         <h3>Canvas assignment</h3>
-        <p>A course assignment configured for file uploads, aligned with how PDFs will be attached for students.</p>
+        <p>A course assignment (e.g. On Paper) with its posting policy set to manual for grade visibility control.</p>
       </div>
     </div>
   </section>

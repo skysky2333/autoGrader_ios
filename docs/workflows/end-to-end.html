@@ -200,8 +200,8 @@
         <h3>Step 3.1 — Prepare Canvas</h3>
         <p>In Canvas LMS:</p>
         <ol>
-          <li>Create an assignment with <strong>File Uploads</strong> as the submission type (if you want PDF uploads).</li>
-          <li>Keep the assignment <strong>unpublished</strong> until after uploads are complete.</li>
+          <li>Create an assignment (e.g. <strong>On Paper</strong>) and publish it if your Canvas instance requires published assignments for grade entry.</li>
+          <li>Set the assignment <strong>posting policy to manual</strong> so grades stay hidden until you explicitly post them.</li>
           <li>Generate a Canvas API token from Account → Settings → New Access Token.</li>
         </ol>
 
@@ -247,9 +247,8 @@ export CANVAS_API_TOKEN="your-token"</code></pre>
         <p>After the pipeline completes:</p>
         <ol>
           <li>Open the assignment in Canvas SpeedGrader</li>
-          <li>Verify that grades and PDFs are attached correctly</li>
-          <li>Publish the assignment when ready</li>
-          <li>Post grades to make them visible to students</li>
+          <li>Verify that grades and PDF comment attachments are correct</li>
+          <li>Post grades manually when you are ready for students to see them</li>
         </ol>
 
         <h2 id="tips">Tips and Best Practices</h2>

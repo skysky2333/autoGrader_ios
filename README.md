@@ -5,7 +5,7 @@
 Fully open-source tools for AI-powered assignment grading and Canvas LMS integration.
 
 - **HGrader**: an iPhone app that scans paper assignments, generates rubrics with multimodal AI, and batch-grades entire stacks of student work — any subject, any handwriting, any layout.
-- **CanvasConnect**: a zero-dependency Python CLI that takes HGrader exports, fuzzy-matches students to a Canvas roster, posts grades via the Canvas API, and uploads scanned PDFs.
+- **CanvasConnect**: a zero-dependency Python CLI that takes HGrader exports, fuzzy-matches students to a Canvas roster, posts grades via the Canvas API, and attaches scanned PDFs as submission comments.
 
 📖 **[Documentation website →](https://skysky2333.github.io/autoGrader_ios/)**
 
@@ -53,19 +53,19 @@ export CANVAS_API_TOKEN="your_token_here"
   --grade-via-api
 ```
 
-This will inspect the export, build PDFs, load the Canvas roster, fuzzy-match students, post grades, and upload scanned PDFs. Pass `--skip-upload` to post grades only.
+This will inspect the export, build PDFs, load the Canvas roster, fuzzy-match students, post grades, and attach scanned PDFs as comment attachments. Pass `--skip-upload` to post grades only.
 
 For a Canvas Gradebook import CSV instead of live API posting, provide `--gradebook-csv` and omit `--grade-via-api`.
 
-## Canvas Assignment Safety
+## Canvas Release Model
 
-CanvasConnect expects by default:
+For the current on-paper fallback workflow, CanvasConnect:
 
-- An unpublished assignment that allows **File Uploads**
-- Manual grade posting (set automatically)
-- Assignment locked after upload (configurable)
+- Attaches each scanned PDF as a **submission comment attachment**
+- Posts grades and structured score breakdowns in the same request
+- Keeps **manual grade posting** enabled so grades stay hidden until you explicitly post them
 
-These can be adjusted in `config.toml`. If you only need a Gradebook CSV, no live Canvas assignment is required.
+Create an `On Paper` assignment in Canvas, set the posting policy to manual, and run the pipeline. If you only need a Gradebook CSV, no live Canvas assignment is required.
 
 ## Repo Layout
 

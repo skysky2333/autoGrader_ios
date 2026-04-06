@@ -49,17 +49,23 @@ def build_parser() -> argparse.ArgumentParser:
     upload_parser = subparsers.add_parser("upload-submissions")
     upload_parser.add_argument("--run-dir", type=Path, required=True)
     upload_parser.add_argument("--locked-manifest", type=Path)
+    upload_parser.add_argument("--test-student-only", action="store_true")
+    upload_parser.add_argument("--test-source-submission-id")
     upload_parser.add_argument("--yes", action="store_true")
 
     grade_api_parser = subparsers.add_parser("post-grades")
     grade_api_parser.add_argument("--run-dir", type=Path, required=True)
     grade_api_parser.add_argument("--locked-manifest", type=Path)
+    grade_api_parser.add_argument("--test-student-only", action="store_true")
+    grade_api_parser.add_argument("--test-source-submission-id")
 
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("--export", type=Path, action="append")
     run_parser.add_argument("--gradebook-csv", type=Path)
     run_parser.add_argument("--assignment-column")
     run_parser.add_argument("--grade-via-api", action="store_true")
+    run_parser.add_argument("--test-student-only", action="store_true")
+    run_parser.add_argument("--test-source-submission-id")
     run_parser.add_argument("--skip-upload", action="store_true")
     run_parser.add_argument("--yes", action="store_true")
 
@@ -101,12 +107,25 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "upload-submissions":
         locked_manifest = args.locked_manifest or args.run_dir / "match" / "locked_manifest.json"
-        upload_submissions_step(locked_manifest, config, args.run_dir, assume_yes=args.yes)
+        upload_submissions_step(
+            locked_manifest,
+            config,
+            args.run_dir,
+            assume_yes=args.yes,
+            test_student_only=args.test_student_only,
+            test_source_submission_id=args.test_source_submission_id,
+        )
         return 0
 
     if args.command == "post-grades":
         locked_manifest = args.locked_manifest or args.run_dir / "match" / "locked_manifest.json"
-        post_grades_step(locked_manifest, config, args.run_dir)
+        post_grades_step(
+            locked_manifest,
+            config,
+            args.run_dir,
+            test_student_only=args.test_student_only,
+            test_source_submission_id=args.test_source_submission_id,
+        )
         return 0
 
     if args.command == "run":
@@ -116,6 +135,8 @@ def main(argv: list[str] | None = None) -> int:
             gradebook_csv=args.gradebook_csv,
             assignment_column=args.assignment_column,
             grade_via_api=args.grade_via_api,
+            test_student_only=args.test_student_only,
+            test_source_submission_id=args.test_source_submission_id,
             upload_submissions=not args.skip_upload,
             assume_yes=args.yes,
         )

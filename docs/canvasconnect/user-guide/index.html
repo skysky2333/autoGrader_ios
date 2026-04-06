@@ -88,7 +88,7 @@
           <li><strong>Python 3.11+</strong> installed on your machine</li>
           <li><strong>Canvas API token</strong> — generate one from Canvas → Account → Settings → New Access Token</li>
           <li><strong>HGrader export folder(s)</strong> — extracted from the ZIP package produced by HGrader</li>
-          <li><strong>Canvas assignment</strong> — with submission type set to "File Uploads" (for PDF upload) or any type (for grade-only posting)</li>
+          <li><strong>Canvas assignment</strong> — an "On Paper" assignment with its posting policy set to manual (for comment-attachment uploads), or any type for grade-only posting</li>
         </ul>
 
         <h2 id="configuration">Configuration</h2>
@@ -206,22 +206,35 @@ margin = 0.10               # Minimum gap between best and second-best match</co
           To use the CSV path, you need to first download your course Gradebook from Canvas and set the <code>assignment_column</code> in your config to match the column header.
         </div>
 
-        <h2 id="pdf-upload">PDF Upload</h2>
+        <h2 id="pdf-upload">PDF Upload &amp; Comment Posting</h2>
         <p>The <code>upload-submissions</code> command:</p>
         <ol>
           <li>Assembles a PDF for each student from their scanned images.</li>
-          <li>Initiates a file upload via the Canvas API.</li>
-          <li>Uploads the file to Canvas's storage.</li>
-          <li>Submits the file as an <code>online_upload</code> on behalf of the student.</li>
+          <li>Uploads the PDF as a submission <strong>comment attachment</strong> via the Canvas API.</li>
+          <li>Posts a structured score breakdown as comment text (configurable).</li>
+          <li>Optionally updates the grade in the same request.</li>
         </ol>
-
-        <h3>Safety Controls</h3>
-        <p>By default, CanvasConnect enforces several safety checks:</p>
+        <p>The upload payload is configurable in <code>config.toml</code>:</p>
         <ul>
-          <li>The assignment must accept <strong>online file uploads</strong>.</li>
-          <li>The assignment should be <strong>unpublished</strong> during upload to prevent student self-submission.</li>
-          <li>After upload, the tool can set <strong>manual grade posting</strong> so grades are not revealed until you're ready.</li>
-          <li>A <strong>lock date</strong> can be set to prevent late submissions after upload.</li>
+          <li><code>upload_attach_pdf_as_comment</code> — attach the scanned PDF</li>
+          <li><code>upload_post_grade</code> — update the grade in the same request</li>
+          <li><code>upload_comment_enabled</code> — post a text comment with score breakdown</li>
+          <li><code>upload_comment_include_total_score</code>, <code>upload_comment_include_question_scores</code>, <code>upload_comment_include_individual_notes</code>, <code>upload_comment_include_overall_notes</code> — control comment content</li>
+        </ul>
+
+        <h3>Release Controls</h3>
+        <p>By default, CanvasConnect enforces manual grade posting:</p>
+        <ul>
+          <li>When <code>enforce_manual_post_policy</code> is true (default), the assignment is set to <strong>post grades manually</strong> so scores stay hidden until you explicitly post them in Canvas.</li>
+          <li>Use an <strong>On Paper</strong> assignment type for the comment-attachment workflow.</li>
+        </ul>
+
+        <h3>Test Mode</h3>
+        <p>To verify the upload before running against the full class:</p>
+        <ul>
+          <li>Set <code>test_student_id</code> in <code>config.toml</code> to a test student's Canvas user ID.</li>
+          <li>Run <code>upload-submissions --test-student-only</code> or <code>post-grades --test-student-only</code>.</li>
+          <li>Optionally set <code>test_source_local_submission_id</code> or pass <code>--test-source-submission-id</code> to replay a specific submission.</li>
         </ul>
 
         <h2 id="troubleshooting">Troubleshooting</h2>
