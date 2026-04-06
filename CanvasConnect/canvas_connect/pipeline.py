@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from csv import DictWriter
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -207,9 +208,14 @@ def post_grades_step(
             config.assignment_id,
             grade_map,
         )
+        progress_callback = _make_canvas_job_progress_callback("Posting grades", len(execution_records))
+        progress_callback(progress_payload)
         final_progress = progress_payload
         if progress_payload.get("id") is not None:
-            final_progress = client.wait_for_progress(int(progress_payload["id"]))
+            final_progress = client.wait_for_progress(
+                int(progress_payload["id"]),
+                progress_callback=progress_callback,
+            )
         output = {
             "mode": "bulk",
             "initial_progress": progress_payload,
@@ -225,7 +231,8 @@ def post_grades_step(
         return json_path
 
     results: list[dict[str, str | int]] = []
-    for record in execution_records:
+    total_attempts = len(execution_records)
+    for processed, record in enumerate(execution_records, start=1):
         try:
             payload = client.grade_submission(
                 config.course_id,
@@ -243,6 +250,14 @@ def post_grades_step(
                     "returned_score": payload.get("score", ""),
                 }
             )
+            print(
+                _render_progress_line(
+                    "Posting grades",
+                    processed,
+                    total_attempts,
+                    f"graded {record.final_student_name or record.local_student_name}",
+                )
+            )
         except CanvasAPIError as error:
             results.append(
                 {
@@ -253,6 +268,14 @@ def post_grades_step(
                     "score": format_points(record.total_score),
                     "message": str(error),
                 }
+            )
+            print(
+                _render_progress_line(
+                    "Posting grades",
+                    processed,
+                    total_attempts,
+                    f"failed for {record.final_student_name or record.local_student_name}",
+                )
             )
 
     json_path = grades_dir / "grade_post_results.json"
@@ -361,6 +384,14 @@ def upload_submissions_step(
                     message=_upload_success_message(config),
                 )
             )
+            print(
+                _render_progress_line(
+                    "Uploading submissions",
+                    processed,
+                    total_attempts,
+                    f"uploaded {record.final_student_name or record.local_student_name}",
+                )
+            )
         except CanvasAPIError as error:
             error_text = str(error)
             error_step = "comment_and_grade" if "/submissions/" in error_text else "comment_file_upload"
@@ -377,8 +408,12 @@ def upload_submissions_step(
                 )
             )
             print(
-                f"[{processed}/{total_attempts}] failed at {error_step}: "
-                f"{record.local_student_name} -> {record.final_student_name} ({record.final_user_id})"
+                _render_progress_line(
+                    "Uploading submissions",
+                    processed,
+                    total_attempts,
+                    f"failed at {error_step} for {record.final_student_name or record.local_student_name}",
+                )
             )
         except ValueError as error:
             results.append(
@@ -394,8 +429,12 @@ def upload_submissions_step(
                 )
             )
             print(
-                f"[{processed}/{total_attempts}] failed at precheck: "
-                f"{record.local_student_name} -> {record.final_student_name} ({record.final_user_id})"
+                _render_progress_line(
+                    "Uploading submissions",
+                    processed,
+                    total_attempts,
+                    f"failed at precheck for {record.final_student_name or record.local_student_name}",
+                )
             )
 
     if config.enforce_manual_post_policy:
@@ -607,6 +646,42 @@ def summarize_status_rows(rows: list[dict[str, str | int]]) -> dict[str, int]:
         status = str(row.get("status", "unknown"))
         summary[status] = summary.get(status, 0) + 1
     return summary
+
+
+def _render_progress_line(label: str, completed: int, total: int, detail: str = "") -> str:
+    width = 12
+    safe_total = max(total, 0)
+    safe_completed = min(max(completed, 0), safe_total) if safe_total else 0
+    filled = width if safe_total == 0 else min(width, int(width * safe_completed / safe_total))
+    bar = "#" * filled + "-" * (width - filled)
+    line = f"{label}: [{bar}] {safe_completed}/{safe_total}"
+    if detail:
+        line += f" {detail}"
+    return line
+
+
+def _make_canvas_job_progress_callback(label: str, total: int) -> Callable[[dict], None]:
+    last_line = ""
+
+    def callback(payload: dict) -> None:
+        nonlocal last_line
+        line = _render_canvas_job_progress_line(label, total, payload)
+        if line and line != last_line:
+            print(line)
+            last_line = line
+
+    return callback
+
+
+def _render_canvas_job_progress_line(label: str, total: int, payload: dict) -> str:
+    state = str(payload.get("workflow_state") or "queued")
+    completion = payload.get("completion")
+    if isinstance(completion, (int, float)):
+        percent = max(0, min(100, int(completion)))
+        completed = total if state == "completed" else min(total, int(total * percent / 100))
+        return _render_progress_line(label, completed, total, f"{state} ({percent}%)")
+    completed = total if state == "completed" else 0
+    return _render_progress_line(label, completed, total, state)
 
 
 def format_points(value: float) -> str:

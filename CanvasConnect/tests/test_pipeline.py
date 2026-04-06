@@ -1,4 +1,5 @@
 import csv
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -16,7 +17,9 @@ from canvas_connect.pipeline import (
     _prompt_for_record,
     build_execution_records,
     build_comment_text,
+    post_grades_step,
     run_pipeline,
+    upload_submissions_step,
     validate_assignment_for_comment_workflow,
     validate_assignment_for_grading,
     validate_assignment_for_upload,
@@ -381,6 +384,156 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("- 1: Correct setup and answer.", text)
         self.assertIn("- 2: Arithmetic slip in the final line.", text)
 
+    def test_post_grades_step_prints_bulk_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            locked_manifest = temp_root / "locked_manifest.json"
+            self._write_locked_manifest(
+                locked_manifest,
+                [
+                    LockedMatchRecord(
+                        local_submission_id="source-1",
+                        local_student_name="Alice Smith",
+                        total_score=9,
+                        max_score=10,
+                        pdf_path="/tmp/alice.pdf",
+                        first_scan_path="/tmp/alice-page-1.jpg",
+                        final_status="matched",
+                        final_user_id=101,
+                        final_student_name="Alice Smith",
+                    ),
+                    LockedMatchRecord(
+                        local_submission_id="source-2",
+                        local_student_name="Bob Jones",
+                        total_score=8,
+                        max_score=10,
+                        pdf_path="/tmp/bob.pdf",
+                        first_scan_path="/tmp/bob-page-1.jpg",
+                        final_status="matched",
+                        final_user_id=102,
+                        final_student_name="Bob Jones",
+                    ),
+                ],
+            )
+            config = CanvasConnectConfig(
+                canvas_base_url="https://canvas.example.edu",
+                course_id=12,
+                assignment_id=34,
+            )
+
+            client = unittest.mock.Mock()
+            client.get_assignment.return_value = {"id": 34}
+            client.update_assignment_grades.return_value = {"id": 999, "workflow_state": "queued", "completion": 0}
+
+            def fake_wait_for_progress(progress_id: int, progress_callback=None, **kwargs):
+                self.assertEqual(progress_id, 999)
+                if progress_callback is not None:
+                    progress_callback({"id": 999, "workflow_state": "running", "completion": 50})
+                    progress_callback({"id": 999, "workflow_state": "completed", "completion": 100})
+                return {"id": 999, "workflow_state": "completed", "completion": 100}
+
+            client.wait_for_progress.side_effect = fake_wait_for_progress
+
+            with patch("canvas_connect.pipeline.CanvasAPI", return_value=client), patch(
+                "canvas_connect.pipeline.token_from_env",
+                return_value="token",
+            ), patch("builtins.print") as mock_print:
+                post_grades_step(locked_manifest, config, temp_root)
+
+        printed = [" ".join(str(arg) for arg in call.args) for call in mock_print.call_args_list]
+        progress_lines = [line for line in printed if line.startswith("Posting grades:")]
+        self.assertGreaterEqual(len(progress_lines), 3)
+        self.assertIn("0/2", progress_lines[0])
+        self.assertTrue(any("1/2" in line for line in progress_lines))
+        self.assertTrue(any("2/2" in line for line in progress_lines))
+
+    def test_upload_submissions_step_prints_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            locked_manifest = temp_root / "locked_manifest.json"
+            self._write_locked_manifest(
+                locked_manifest,
+                [
+                    LockedMatchRecord(
+                        local_submission_id="source-1",
+                        local_student_name="Alice Smith",
+                        total_score=9,
+                        max_score=10,
+                        pdf_path="/tmp/alice.pdf",
+                        first_scan_path="/tmp/alice-page-1.jpg",
+                        final_status="matched",
+                        final_user_id=101,
+                        final_student_name="Alice Smith",
+                    ),
+                    LockedMatchRecord(
+                        local_submission_id="source-2",
+                        local_student_name="Bob Jones",
+                        total_score=8,
+                        max_score=10,
+                        pdf_path="/tmp/bob.pdf",
+                        first_scan_path="/tmp/bob-page-1.jpg",
+                        final_status="matched",
+                        final_user_id=102,
+                        final_student_name="Bob Jones",
+                    ),
+                ],
+            )
+            self._write_local_dataset(
+                temp_root / "inspect" / "local_dataset.json",
+                [
+                    LocalSubmission(
+                        submission_id="source-1",
+                        folder_name="s1",
+                        student_name="Alice Smith",
+                        total_score=9,
+                        max_score=10,
+                        teacher_reviewed=False,
+                        name_needs_review=False,
+                        created_at=None,
+                        overall_notes="Strong work overall.",
+                        scan_paths=["/tmp/alice-page-1.jpg"],
+                        pdf_path="/tmp/alice.pdf",
+                        grades=[],
+                    ),
+                    LocalSubmission(
+                        submission_id="source-2",
+                        folder_name="s2",
+                        student_name="Bob Jones",
+                        total_score=8,
+                        max_score=10,
+                        teacher_reviewed=False,
+                        name_needs_review=False,
+                        created_at=None,
+                        overall_notes="Good effort.",
+                        scan_paths=["/tmp/bob-page-1.jpg"],
+                        pdf_path="/tmp/bob.pdf",
+                        grades=[],
+                    ),
+                ],
+            )
+            config = CanvasConnectConfig(
+                canvas_base_url="https://canvas.example.edu",
+                course_id=12,
+                assignment_id=34,
+            )
+
+            client = unittest.mock.Mock()
+            client.get_assignment.return_value = {"id": 34}
+            client.upload_submission_comment_file.return_value = {"id": 444}
+            client.grade_or_comment_submission.return_value = {"id": 555}
+
+            with patch("canvas_connect.pipeline.CanvasAPI", return_value=client), patch(
+                "canvas_connect.pipeline.token_from_env",
+                return_value="token",
+            ), patch("builtins.print") as mock_print:
+                upload_submissions_step(locked_manifest, config, temp_root, assume_yes=True)
+
+        printed = [" ".join(str(arg) for arg in call.args) for call in mock_print.call_args_list]
+        progress_lines = [line for line in printed if line.startswith("Uploading submissions:")]
+        self.assertEqual(len(progress_lines), 2)
+        self.assertIn("1/2", progress_lines[0])
+        self.assertIn("2/2", progress_lines[1])
+
     def _write_gradebook_template(self, path: Path) -> None:
         with path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(
@@ -400,3 +553,22 @@ class PipelineTests(unittest.TestCase):
                             "Quiz 2 Upload": "",
                         }
                     )
+
+    def _write_locked_manifest(self, path: Path, records: list[LockedMatchRecord]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps([record.to_dict() for record in records], indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+    def _write_local_dataset(self, path: Path, submissions: list[LocalSubmission]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "export_paths": [],
+            "title": "Sample Export",
+            "created_at": None,
+            "question_count": 1,
+            "total_points": 10,
+            "submissions": [submission.to_dict() for submission in submissions],
+        }
+        path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import json
 import mimetypes
@@ -213,10 +214,13 @@ class CanvasAPI:
         progress_id: int,
         poll_interval_seconds: float = 1.5,
         timeout_seconds: int = 300,
+        progress_callback: Callable[[dict], None] | None = None,
     ) -> dict:
         started = time.monotonic()
         while True:
             payload = self.get_progress(progress_id)
+            if progress_callback is not None:
+                progress_callback(payload)
             state = payload.get("workflow_state")
             if state in {"completed", "failed"}:
                 return payload
