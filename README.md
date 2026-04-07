@@ -1,6 +1,6 @@
 # HGrader + CanvasConnect
 
-> **A note on quality.** This project was built for my own daily use, not as a demo. While AI was used heavily during development, every line ships with intent — async task management for all heavy work, careful memory and image lifecycle handling, thorough testing, and deliberate UI/UX decisions. For an iOS app, none of that is optional: the experience must be fluid, the app must stay snappy under load, and it must never crash. This is not vibe-coded junk.
+> **A note on quality.** While AI was used heavily during development, it has been build well — async task management, careful memory and image lifecycle handling, thorough testing, and deliberate UI/UX decisions. For an iOS app, none of that is optional. This make the app experience fluid and stay snappy under load. This is not vibe-coded junk.
 
 Fully open-source tools for AI-powered assignment grading and Canvas LMS integration.
 
