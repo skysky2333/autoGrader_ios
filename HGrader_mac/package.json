@@ -1,0 +1,16 @@
+{
+  "name": "hgrader_mac",
+  "version": "1.0.0",
+  "description": "Desktop Electron port of HomeworkGrader for macOS and future cross-platform targets.",
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --check main.js && node --check preload.js && node --check renderer.js && node --check src/openai-service.js && node --check src/exporters.js && node --check src/shared.js && node --check src/canvas-connect.js"
+  },
+  "devDependencies": {
+    "electron": "^41.1.1"
+  }
+}
