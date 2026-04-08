@@ -2,6 +2,22 @@
 
 const appRoot = document.getElementById("app");
 
+const icons = {
+  plus: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>',
+  settings: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.86 2.01a1.04 1.04 0 0 1 2.08 0 1.07 1.07 0 0 0 .71 1.03 1.07 1.07 0 0 0 1.23-.24 1.04 1.04 0 0 1 1.47 1.47 1.07 1.07 0 0 0-.24 1.23 1.07 1.07 0 0 0 1.03.71 1.04 1.04 0 0 1 0 2.08 1.07 1.07 0 0 0-1.03.71 1.07 1.07 0 0 0 .24 1.23 1.04 1.04 0 0 1-1.47 1.47 1.07 1.07 0 0 0-1.23-.24 1.07 1.07 0 0 0-.71 1.03 1.04 1.04 0 0 1-2.08 0 1.07 1.07 0 0 0-.71-1.03 1.07 1.07 0 0 0-1.23.24 1.04 1.04 0 0 1-1.47-1.47 1.07 1.07 0 0 0 .24-1.23 1.07 1.07 0 0 0-1.03-.71 1.04 1.04 0 0 1 0-2.08 1.07 1.07 0 0 0 1.03-.71 1.07 1.07 0 0 0-.24-1.23 1.04 1.04 0 0 1 1.47-1.47 1.07 1.07 0 0 0 1.23.24 1.07 1.07 0 0 0 .71-1.03z"/><circle cx="8" cy="8" r="2"/></svg>',
+  upload: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2M10 3v10M6 7l4-4 4 4"/></svg>',
+  download: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 11v2a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5v-2M8 2v9M5 8l3 3 3-3"/></svg>',
+  trash: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5h11M5.5 4.5V3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.5M12 4.5l-.5 8.5a1.5 1.5 0 0 1-1.5 1.5H6a1.5 1.5 0 0 1-1.5-1.5L4 4.5"/></svg>',
+  edit: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 2.5l5 5L6 15H1v-5l7.5-7.5zM10.5 4.5l2 2"/></svg>',
+  refresh: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 2v4.5H6M14.5 14V9.5H10"/><path d="M13.3 6A6 6 0 0 0 3.2 3.7L1.5 6.5M2.7 10a6 6 0 0 0 10.1 2.3l1.7-2.8"/></svg>',
+  x: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
+  file: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 1.5H4a1.5 1.5 0 0 0-1.5 1.5v10A1.5 1.5 0 0 0 4 14.5h8a1.5 1.5 0 0 0 1.5-1.5V6L9 1.5z"/><path d="M9 1.5V6h4.5"/></svg>',
+  check: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5 6.5-8"/></svg>',
+  grid: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
+  send: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 1.5l-6 13-2.5-5.5-5.5-2.5 13-6z"/><path d="M14.5 1.5L6 8"/></svg>',
+  canvas: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="1.5" width="13" height="13" rx="2"/><path d="M1.5 6h13M6 1.5v13"/></svg>',
+};
+
 const ui = {
   selectedSessionId: null,
   selectedTab: "overview",
@@ -56,12 +72,12 @@ function render() {
       <main class="main">
         <div class="topbar">
           <div class="headline">
-            <h1>HGrader Mac</h1>
-            <p>Electron desktop port of HomeworkGrader, extended into an end-to-end grading workspace with optional Canvas publishing after review.</p>
+            <h1>HGrader</h1>
+            <p>End-to-end grading workspace with Canvas publishing.</p>
           </div>
           <div class="toolbar-actions">
-            <button type="button" class="ghost-button" data-action="open-settings">Settings</button>
-            <button type="button" class="primary-button" data-action="open-new-session">New Session</button>
+            <button type="button" class="ghost-button" data-action="open-settings">${icons.settings} Settings</button>
+            <button type="button" class="primary-button" data-action="open-new-session">${icons.plus} New Session</button>
           </div>
         </div>
         <div class="workspace scroll-area" data-scroll-key="workspace">
@@ -69,7 +85,7 @@ function render() {
         </div>
       </main>
       ${renderModal(session)}
-      ${ui.busy ? `<div class="busy-overlay"><strong>${escapeHTML(ui.busy.title)}</strong><div class="muted">${escapeHTML(ui.busy.detail || "")}</div></div>` : ""}
+      ${ui.busy ? `<div class="busy-overlay"><strong>${escapeHTML(ui.busy.title)}</strong></div>` : ""}
       ${ui.toast ? `<div class="toast ${ui.toast.tone}">${escapeHTML(ui.toast.message)}</div>` : ""}
     </div>
   `;
@@ -83,15 +99,16 @@ function renderSidebar(sessions) {
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-mark">
-          <div class="brand-kicker">Paper To Canvas</div>
+          <div class="brand-kicker">Paper to Canvas</div>
           <div class="brand-title">HGrader</div>
         </div>
-        <button type="button" class="chip-button" data-action="open-new-session">Create</button>
+        <button type="button" class="ghost-button" data-action="open-settings" style="background:transparent;border-color:rgba(255,255,255,0.12);color:var(--sidebar-muted);padding:6px">${icons.settings}</button>
       </div>
+      <button type="button" class="new-session-btn" data-action="open-new-session">${icons.plus} New Session</button>
       <div class="session-list" data-scroll-key="sidebar-list">
         ${sessions.length ? sessions.map(renderSessionCard).join("") : `
           <div class="sidebar-empty">
-            No grading sessions yet. Create one, upload the blank assignment, approve the rubric, and start grading.
+            No sessions yet. Create one to start grading.
           </div>
         `}
       </div>
@@ -112,18 +129,19 @@ function renderSessionCard(session) {
 }
 
 function renderSessionWorkspace(session) {
+  const tabIcons = { overview: icons.grid, rubric: icons.file, results: icons.check, canvas: icons.canvas };
   return `
     <section class="hero-panel">
       <div class="panel-header">
         <div>
-          <div class="brand-kicker">Active Session</div>
+          <div class="status-row" style="margin-bottom:8px">${renderSessionChips(session)}</div>
           <h2 class="hero-title">${escapeHTML(session.title)}</h2>
-          <p class="hero-copy">The original iPhone app flowed through Overview, Rubric, and Results. This desktop build keeps the same lifecycle, but file ingestion replaces camera capture and review surfaces are widened so scans can sit beside grading controls.</p>
+          <p class="hero-copy">${session.questions.length} questions &middot; ${session.submissions.length} submissions &middot; ${escapeHTML(session.sessionCostLabel)} API cost</p>
         </div>
         <div class="panel-actions">
-          <button type="button" class="secondary-button" data-action="refresh-session" data-session-id="${session.id}">Refresh Jobs</button>
-          <button type="button" class="ghost-button" data-action="open-edit-session" data-session-id="${session.id}">Edit Config</button>
-          <button type="button" class="danger-button" data-action="delete-session" data-session-id="${session.id}">Delete Session</button>
+          <button type="button" class="secondary-button" data-action="refresh-session" data-session-id="${session.id}">${icons.refresh} Refresh</button>
+          <button type="button" class="ghost-button" data-action="open-edit-session" data-session-id="${session.id}">${icons.edit} Config</button>
+          <button type="button" class="danger-button" data-action="delete-session" data-session-id="${session.id}">${icons.trash} Delete</button>
         </div>
       </div>
       <div class="tabbar">
@@ -144,11 +162,12 @@ function renderSessionWorkspace(session) {
 function renderWelcomeState() {
   return `
     <section class="empty-state">
-      <h3>Desktop grading workspace</h3>
-      <p>Create a grading session, save your OpenAI key in Settings, upload the blank assignment, approve the generated rubric, and then drag in student PDFs or scan-image sets. Batch jobs poll in the background and the final export stays compatible with CanvasConnect.</p>
+      <div class="empty-icon">${icons.grid}</div>
+      <h3>Welcome to HGrader</h3>
+      <p>Create a grading session, add your OpenAI key, upload the blank assignment, and start grading student submissions.</p>
       <div class="panel-actions" style="justify-content:center">
-        <button type="button" class="primary-button" data-action="open-new-session">Create First Session</button>
-        <button type="button" class="ghost-button" data-action="open-settings">Open Settings</button>
+        <button type="button" class="primary-button" data-action="open-new-session">${icons.plus} Create First Session</button>
+        <button type="button" class="ghost-button" data-action="open-settings">${icons.settings} Settings</button>
       </div>
     </section>
   `;
@@ -160,25 +179,28 @@ function renderOverviewTab(session) {
       <div class="panel-header">
         <div>
           <h3 class="panel-title">Overview</h3>
-          <p class="panel-copy">Master upload generates the rubric, student uploads feed the grading queue, and the session summary mirrors the original HomeworkGrader controls.</p>
+          <p class="panel-copy">Upload the master assignment to generate a rubric, then add student submissions for grading.</p>
         </div>
       </div>
       <div class="grid-two">
         <div class="dropzone" data-upload="master" data-session-id="${session.id}">
+          <div class="drop-icon">${icons.upload}</div>
           <strong>Blank Assignment</strong>
-          <p>${snapshot.meta.hasAPIKey ? "Upload or drag the teacher copy, blank exam pages, or a clean master PDF. The app will submit an OpenAI answer-key batch immediately." : "Add your OpenAI API key in Settings before uploading the blank assignment."}</p>
-          <button type="button" class="primary-button" data-action="choose-master-files" data-session-id="${session.id}">Upload Blank Assignment</button>
+          <p>${snapshot.meta.hasAPIKey ? "Upload or drag the teacher copy to generate an answer key." : "Add your OpenAI API key in Settings first."}</p>
+          <button type="button" class="primary-button" data-action="choose-master-files" data-session-id="${session.id}">${icons.upload} Upload Master</button>
         </div>
         <div class="dropzone" data-upload="batch" data-session-id="${session.id}">
-          <strong>Student Scan Batch</strong>
-          <p>${session.questions.length ? "Drag student PDFs or image files here. Each PDF should represent one submission; image sets can be grouped by file count in the next step." : "You can queue student scans before rubric approval. They stay local until the rubric is approved, then you can submit them all in one batch."}</p>
-          <button type="button" class="primary-button" data-action="choose-batch-files" data-session-id="${session.id}" ${session.isFinished ? "disabled" : ""}>Batch Add Student Files</button>
+          <div class="drop-icon">${icons.file}</div>
+          <strong>Student Submissions</strong>
+          <p>${session.questions.length ? "Drag student PDFs or images here. Each PDF is one submission." : "Queue student scans now; they'll be submitted once the rubric is approved."}</p>
+          <button type="button" class="primary-button" data-action="choose-batch-files" data-session-id="${session.id}" ${session.isFinished ? "disabled" : ""}>${icons.upload} Add Batch</button>
         </div>
       </div>
       ${session.questions.length ? `
-        <div class="dropzone" data-upload="single" data-session-id="${session.id}" style="margin-top:18px">
+        <div class="dropzone" data-upload="single" data-session-id="${session.id}" style="margin-top:16px">
+          <div class="drop-icon">${icons.file}</div>
           <strong>Single Submission</strong>
-          <p>Use this for irregular page counts or immediate one-off review. Upload one PDF or one image-only set and the model will return a review draft before anything is saved.</p>
+          <p>Upload one submission for immediate review before saving.</p>
           <button type="button" class="secondary-button" data-action="choose-single-files" data-session-id="${session.id}" ${!snapshot.meta.hasAPIKey || session.isFinished ? "disabled" : ""}>Grade One Submission</button>
         </div>
       ` : ""}
@@ -188,10 +210,10 @@ function renderOverviewTab(session) {
         <div class="panel-header">
           <div>
             <h3 class="panel-title">Master Files</h3>
-            <p class="panel-copy">${session.hasPendingRubricGeneration ? escapeHTML(session.rubricProcessing?.detail || "Answer key batch pending.") : session.hasPendingRubricReview ? "A generated rubric is ready for review." : "The saved master files drive rubric generation and stay in the export package."}</p>
+            <p class="panel-copy">${session.hasPendingRubricGeneration ? escapeHTML(session.rubricProcessing?.detail || "Answer key batch pending.") : session.hasPendingRubricReview ? "A generated rubric is ready for review." : "Master files used for rubric generation."}</p>
           </div>
           <div class="panel-actions">
-            ${session.hasPendingRubricReview ? `<button type="button" class="primary-button" data-action="open-rubric-review" data-session-id="${session.id}">Review Generated Answer Key</button>` : ""}
+            ${session.hasPendingRubricReview ? `<button type="button" class="primary-button" data-action="open-rubric-review" data-session-id="${session.id}">${icons.check} Review Answer Key</button>` : ""}
           </div>
         </div>
         <div class="asset-grid">${renderAssets(session.masterAssets)}</div>
@@ -204,24 +226,24 @@ function renderOverviewTab(session) {
         <div class="summary-subvalue">Total points: ${score(session.totalPossiblePoints)}</div>
       </div>
       <div class="summary-card">
-        <div class="summary-label">Saved Submissions</div>
+        <div class="summary-label">Submissions</div>
         <div class="summary-value">${session.submissions.length}</div>
         <div class="summary-subvalue">${completedSubmissions(session).length} completed</div>
       </div>
       <div class="summary-card">
         <div class="summary-label">API Cost</div>
         <div class="summary-value">${escapeHTML(session.sessionCostLabel)}</div>
-        <div class="summary-subvalue">${session.validationEnabled ? "Validation enabled" : "Validation disabled"}</div>
+        <div class="summary-subvalue">${session.validationEnabled ? "Validation on" : "Validation off"}</div>
       </div>
     </section>
     <section class="content-panel">
       <div class="panel-header">
         <div>
-          <h3 class="panel-title">Session Configuration</h3>
-          <p class="panel-copy">These values are carried from the iOS app one-for-one: model ids, scoring policy, relaxed grading, reasoning/verbosity, service tier, and validation attempt count.</p>
+          <h3 class="panel-title">Configuration</h3>
+          <p class="panel-copy">Model settings, scoring policy, and validation parameters.</p>
         </div>
         <div class="panel-actions">
-          <button type="button" class="ghost-button" data-action="open-edit-session" data-session-id="${session.id}">Edit Config</button>
+          <button type="button" class="ghost-button" data-action="open-edit-session" data-session-id="${session.id}">${icons.edit} Edit</button>
         </div>
       </div>
       <div class="grid-two">
@@ -261,10 +283,10 @@ function renderRubricTab(session) {
         <div class="panel-header">
           <div>
             <h3 class="panel-title">Rubric</h3>
-            <p class="panel-copy">${session.hasPendingRubricGeneration ? escapeHTML(session.rubricProcessing?.detail || "Answer key pending.") : session.hasPendingRubricReview ? "A generated rubric is ready for review and approval." : session.hasFailedRubricGeneration ? escapeHTML(session.rubricProcessing?.detail || "The last answer-key request failed.") : "Upload the blank assignment from the Overview tab first."}</p>
+            <p class="panel-copy">${session.hasPendingRubricGeneration ? escapeHTML(session.rubricProcessing?.detail || "Answer key pending.") : session.hasPendingRubricReview ? "A generated rubric is ready for review." : session.hasFailedRubricGeneration ? escapeHTML(session.rubricProcessing?.detail || "The last answer-key request failed.") : "Upload the blank assignment from the Overview tab first."}</p>
           </div>
           <div class="panel-actions">
-            ${session.hasPendingRubricReview ? `<button type="button" class="primary-button" data-action="open-rubric-review" data-session-id="${session.id}">Review Generated Answer Key</button>` : ""}
+            ${session.hasPendingRubricReview ? `<button type="button" class="primary-button" data-action="open-rubric-review" data-session-id="${session.id}">${icons.check} Review Answer Key</button>` : ""}
           </div>
         </div>
         ${session.masterAssets.length ? `<div class="asset-grid">${renderAssets(session.masterAssets)}</div>` : ""}
@@ -277,7 +299,7 @@ function renderRubricTab(session) {
       <div class="panel-header">
         <div>
           <h3 class="panel-title">Approved Rubric</h3>
-          <p class="panel-copy">The desktop port keeps the same rubric structure as HomeworkGrader: teacher-reviewed questions, an overall grading rule block, and per-question prompt/ideal-answer/criteria fields.</p>
+          <p class="panel-copy">Teacher-reviewed questions with grading rules and criteria.</p>
         </div>
       </div>
       <div class="grid-two">
@@ -321,18 +343,18 @@ function renderResultsTab(session) {
     <section class="content-panel">
       <div class="results-toolbar">
         <div class="panel-actions">
-          <button type="button" class="secondary-button" data-action="export-csv" data-session-id="${session.id}" ${session.submissions.length ? "" : "disabled"}>Export Session CSV</button>
-          <button type="button" class="secondary-button" data-action="export-package" data-session-id="${session.id}" ${session.submissions.length ? "" : "disabled"}>Export Full Session Package</button>
-          <button type="button" class="ghost-button" data-action="regrade-all" data-session-id="${session.id}" ${canRegradeAll(session) ? "" : "disabled"}>Regrade All Saved Scans</button>
-          ${(session.submissions || []).some((submission) => submission.isQueuedForRubric) ? `<button type="button" class="primary-button" data-action="submit-queued" data-session-id="${session.id}" ${canSubmitQueued(session) ? "" : "disabled"}>Submit All Queued Scans</button>` : ""}
+          <button type="button" class="secondary-button" data-action="export-csv" data-session-id="${session.id}" ${session.submissions.length ? "" : "disabled"}>${icons.download} Export CSV</button>
+          <button type="button" class="secondary-button" data-action="export-package" data-session-id="${session.id}" ${session.submissions.length ? "" : "disabled"}>${icons.download} Export Package</button>
+          <button type="button" class="ghost-button" data-action="regrade-all" data-session-id="${session.id}" ${canRegradeAll(session) ? "" : "disabled"}>${icons.refresh} Regrade All</button>
+          ${(session.submissions || []).some((submission) => submission.isQueuedForRubric) ? `<button type="button" class="primary-button" data-action="submit-queued" data-session-id="${session.id}" ${canSubmitQueued(session) ? "" : "disabled"}>${icons.send} Submit Queued</button>` : ""}
         </div>
-        <input class="search-input" data-action="results-search" placeholder="Search by student name" value="${escapeHTML(ui.resultsSearch)}" />
+        <input class="search-input" data-action="results-search" placeholder="Search submissions..." value="${escapeHTML(ui.resultsSearch)}" />
       </div>
       ${(session.submissions || []).some((submission) => submission.isAwaitingRemoteProcessing) ? `
-        <div class="dropzone" style="margin-bottom:18px">
+        <div class="dropzone" style="margin-bottom:16px">
           <strong>Pending Batch Jobs</strong>
-          <p>Batch submissions show up here immediately as pending. Polling runs in the background while the app is open, and you can force a check any time.</p>
-          <button type="button" class="secondary-button" data-action="refresh-session" data-session-id="${session.id}">Check Pending Jobs</button>
+          <p>Batch submissions are processing. Polling runs in the background.</p>
+          <button type="button" class="secondary-button" data-action="refresh-session" data-session-id="${session.id}">${icons.refresh} Check Now</button>
         </div>
       ` : ""}
       ${submissions.length ? `
@@ -353,8 +375,9 @@ function renderResultsTab(session) {
         </div>
       ` : `
         <div class="empty-state">
+          <div class="empty-icon">${icons.file}</div>
           <h3>No results yet</h3>
-          <p>Upload student work from the Overview tab. Queued, pending, completed, and failed submissions all appear here with the same review/export lifecycle as the original app.</p>
+          <p>Upload student work from the Overview tab. Submissions will appear here as they are processed.</p>
         </div>
       `}
     </section>
@@ -373,14 +396,14 @@ function renderCanvasTab(session) {
     <section class="content-panel">
       <div class="panel-header">
         <div>
-          <h3 class="panel-title">Canvas Module</h3>
-          <p class="panel-copy">This is the GUI adaptation of CanvasConnect: configure Canvas, load a roster, review fuzzy matches, then export a Gradebook CSV or push grades and PDF comments directly to Canvas.</p>
+          <h3 class="panel-title">Canvas Integration</h3>
+          <p class="panel-copy">Configure Canvas, load a roster, review matches, then export grades or publish directly.</p>
         </div>
         <div class="panel-actions">
-          <button type="button" class="ghost-button" data-action="open-settings">Tokens</button>
-          <button type="button" class="secondary-button" data-action="load-canvas-roster" data-session-id="${session.id}" ${snapshot.meta.hasCanvasToken ? "" : "disabled"}>Load Roster From Canvas</button>
-          <button type="button" class="secondary-button" data-action="choose-gradebook-template" data-session-id="${session.id}">Choose Gradebook CSV</button>
-          <button type="button" class="primary-button" data-action="run-canvas-matching" data-session-id="${session.id}" ${canvas.rosterCount ? "" : "disabled"}>Run Matching</button>
+          <button type="button" class="ghost-button" data-action="open-settings">${icons.settings} Tokens</button>
+          <button type="button" class="secondary-button" data-action="load-canvas-roster" data-session-id="${session.id}" ${snapshot.meta.hasCanvasToken ? "" : "disabled"}>${icons.download} Load Roster</button>
+          <button type="button" class="secondary-button" data-action="choose-gradebook-template" data-session-id="${session.id}">${icons.file} Gradebook CSV</button>
+          <button type="button" class="primary-button" data-action="run-canvas-matching" data-session-id="${session.id}" ${canvas.rosterCount ? "" : "disabled"}>${icons.check} Run Matching</button>
         </div>
       </div>
       <form id="canvas-config-form">
@@ -467,10 +490,10 @@ function renderCanvasTab(session) {
       <div class="panel-header">
         <div>
           <h3 class="panel-title">Match Review</h3>
-          <p class="panel-copy">Auto-accepted matches are prefilled. Review candidates, then change the selection to another roster entry or explicitly skip a submission.</p>
+          <p class="panel-copy">Review and confirm student-to-roster matches before publishing.</p>
         </div>
         <div class="panel-actions">
-          <button type="button" class="ghost-button" data-action="run-canvas-matching" data-session-id="${session.id}" ${canvas.rosterCount ? "" : "disabled"}>Re-run Matching</button>
+          <button type="button" class="ghost-button" data-action="run-canvas-matching" data-session-id="${session.id}" ${canvas.rosterCount ? "" : "disabled"}>${icons.refresh} Re-run</button>
         </div>
       </div>
       ${matches.length ? `
@@ -479,8 +502,9 @@ function renderCanvasTab(session) {
         </div>
       ` : `
         <div class="empty-state">
-          <h3>No match manifest yet</h3>
-          <p>Load a Canvas roster or Gradebook CSV, then run matching. The GUI replaces the CLI prompt loop with editable rows and explicit final selections.</p>
+          <div class="empty-icon">${icons.canvas}</div>
+          <h3>No matches yet</h3>
+          <p>Load a Canvas roster or Gradebook CSV, then run matching.</p>
         </div>
       `}
     </section>
@@ -488,13 +512,13 @@ function renderCanvasTab(session) {
       <div class="panel-header">
         <div>
           <h3 class="panel-title">Publish</h3>
-          <p class="panel-copy">Use the current session directly. No export/import round trip is required inside the desktop app.</p>
+          <p class="panel-copy">Push grades and feedback directly to Canvas.</p>
         </div>
       </div>
       <div class="panel-actions">
-        <button type="button" class="secondary-button" data-action="export-canvas-gradebook" data-session-id="${session.id}" ${(matchedCount && canvas.gradebookTemplatePath && canvas.assignmentColumn) ? "" : "disabled"}>Build Gradebook CSV</button>
-        <button type="button" class="secondary-button" data-action="post-canvas-grades" data-session-id="${session.id}" ${(matchedCount && snapshot.meta.hasCanvasToken) ? "" : "disabled"}>Post Grades</button>
-        <button type="button" class="primary-button" data-action="upload-canvas-submissions" data-session-id="${session.id}" ${(matchedCount && snapshot.meta.hasCanvasToken) ? "" : "disabled"}>Upload PDFs + Comments</button>
+        <button type="button" class="secondary-button" data-action="export-canvas-gradebook" data-session-id="${session.id}" ${(matchedCount && canvas.gradebookTemplatePath && canvas.assignmentColumn) ? "" : "disabled"}>${icons.download} Build Gradebook</button>
+        <button type="button" class="secondary-button" data-action="post-canvas-grades" data-session-id="${session.id}" ${(matchedCount && snapshot.meta.hasCanvasToken) ? "" : "disabled"}>${icons.send} Post Grades</button>
+        <button type="button" class="primary-button" data-action="upload-canvas-submissions" data-session-id="${session.id}" ${(matchedCount && snapshot.meta.hasCanvasToken) ? "" : "disabled"}>${icons.upload} Upload PDFs</button>
       </div>
       ${canvas.lastGradeResults ? `
         <div class="detail-pane" style="margin-top:18px">
@@ -587,7 +611,7 @@ function renderCanvasMatchRow(session, record, canvas) {
           </div>
           ${record.finalStatus === "matched" ? `<p class="panel-copy">Final target: ${escapeHTML(record.finalStudentName)} (${escapeHTML(String(record.finalUserId))}).</p>` : `<p class="panel-copy">Choose a roster entry or skip this submission before publishing.</p>`}
           <div class="panel-actions" style="margin-top:12px">
-            <button type="button" class="ghost-button" data-action="view-submission" data-session-id="${session.id}" data-submission-id="${record.localSubmissionId}">Open Submission</button>
+            <button type="button" class="ghost-button" data-action="view-submission" data-session-id="${session.id}" data-submission-id="${record.localSubmissionId}">${icons.file} View Submission</button>
           </div>
         </div>
       </div>
@@ -627,35 +651,35 @@ function renderSettingsModal() {
       <div class="modal-card" style="max-width:760px">
         <div class="modal-header">
           <div>
-            <h2>Settings</h2>
-            <p class="panel-copy">The API key is kept in Electron secure storage when available. The desktop port uses the same OpenAI Responses and Batch APIs as HomeworkGrader.</p>
+            <h2>${icons.settings} Settings</h2>
+            <p class="panel-copy">API keys are stored securely via Electron's safe storage.</p>
           </div>
-          <button type="button" class="ghost-button" data-action="close-modal">Close</button>
+          <button type="button" class="ghost-button" data-action="close-modal">${icons.x}</button>
         </div>
         <div class="modal-body" data-scroll-key="modal-body">
           <form id="settings-form" class="grid-two">
             <div class="detail-pane">
               <div class="field">
                 <label for="settings-api-key">OpenAI API Key</label>
-                <input id="settings-api-key" name="apiKey" type="password" placeholder="${snapshot.meta.hasAPIKey ? "A key is already saved. Enter a new one to replace it." : "sk-..."}" autocomplete="off" />
+                <input id="settings-api-key" name="apiKey" type="password" placeholder="${snapshot.meta.hasAPIKey ? "Key saved. Enter new to replace." : "sk-..."}" autocomplete="off" />
               </div>
               <div class="field">
                 <label for="settings-canvas-token">Canvas API Token</label>
-                <input id="settings-canvas-token" name="canvasToken" type="password" placeholder="${snapshot.meta.hasCanvasToken ? "A token is already saved. Enter a new one to replace it." : "Canvas access token"}" autocomplete="off" />
+                <input id="settings-canvas-token" name="canvasToken" type="password" placeholder="${snapshot.meta.hasCanvasToken ? "Token saved. Enter new to replace." : "Canvas access token"}" autocomplete="off" />
               </div>
               <div class="panel-actions" style="margin-top:14px">
-                <button class="primary-button" type="submit">Save Tokens</button>
-                <button class="secondary-button" type="button" data-action="test-api-key">Test OpenAI Key</button>
-                <button class="ghost-button" type="button" data-action="clear-api-key">Clear Saved Key</button>
-                <button class="ghost-button" type="button" data-action="clear-canvas-token">Clear Canvas Token</button>
+                <button class="primary-button" type="submit">${icons.check} Save Tokens</button>
+                <button class="secondary-button" type="button" data-action="test-api-key">Test Key</button>
+                <button class="ghost-button" type="button" data-action="clear-api-key">Clear Key</button>
+                <button class="ghost-button" type="button" data-action="clear-canvas-token">Clear Token</button>
               </div>
             </div>
             <div class="detail-pane">
-              <div class="detail-label">Organization Cost Summary</div>
+              <div class="detail-label">Organization Cost</div>
               <div class="summary-value">${orgCost ? currency(orgCost.totalCostUSD) : "$0.00"}</div>
-              <p class="panel-copy">${orgCost ? `Fetched ${formatDateTime(orgCost.fetchedAt)}.` : "Not fetched yet. This endpoint requires an admin-capable key."}</p>
+              <p class="panel-copy">${orgCost ? `Fetched ${formatDateTime(orgCost.fetchedAt)}.` : "Requires an admin-capable key."}</p>
               <div class="panel-actions" style="margin-top:14px">
-                <button class="secondary-button" type="button" data-action="fetch-org-cost">Fetch Org Cost</button>
+                <button class="secondary-button" type="button" data-action="fetch-org-cost">${icons.refresh} Fetch Cost</button>
               </div>
             </div>
           </form>
@@ -671,7 +695,7 @@ function modalShell(title, body, submitLabel, formId) {
       <div class="modal-card" style="max-width:980px">
         <div class="modal-header">
           <h2>${escapeHTML(title)}</h2>
-          <button type="button" class="ghost-button" data-action="close-modal">Close</button>
+          <button type="button" class="ghost-button" data-action="close-modal">${icons.x}</button>
         </div>
         <div class="modal-body" data-scroll-key="modal-body">
           <form id="${formId}" class="grid-two">
@@ -679,7 +703,7 @@ function modalShell(title, body, submitLabel, formId) {
             <div class="detail-pane" style="grid-column:1 / -1">
               <div class="panel-actions" style="justify-content:flex-end">
                 <button class="ghost-button" type="button" data-action="close-modal">Cancel</button>
-                <button class="primary-button" type="submit">${escapeHTML(submitLabel)}</button>
+                <button class="primary-button" type="submit">${icons.check} ${escapeHTML(submitLabel)}</button>
               </div>
             </div>
           </form>
@@ -757,9 +781,9 @@ function renderRubricReviewModal(session) {
         <div class="modal-header">
           <div>
             <h2>Approve Rubric</h2>
-            <p class="panel-copy">Desktop-specific change: instead of sequential mobile pages, the master files stay visible in a full-width asset grid while you edit the rubric beside them.</p>
+            <p class="panel-copy">Review the generated rubric alongside the master files.</p>
           </div>
-          <button type="button" class="ghost-button" data-action="close-modal">Close</button>
+          <button type="button" class="ghost-button" data-action="close-modal">${icons.x}</button>
         </div>
         <div class="modal-body" data-scroll-key="modal-body">
           <form id="rubric-review-form">
@@ -773,7 +797,7 @@ function renderRubricReviewModal(session) {
                   <input name="defaultPoints" value="1" />
                 </div>
                 <div class="panel-actions" style="margin-top:10px">
-                  <button type="button" class="secondary-button" data-action="apply-default-points">Apply To All Questions</button>
+                  <button type="button" class="secondary-button" data-action="apply-default-points">Apply To All</button>
                 </div>
               </div>
               <div class="detail-pane">
@@ -788,7 +812,7 @@ function renderRubricReviewModal(session) {
             </div>
             <div class="modal-footer">
               <button type="button" class="ghost-button" data-action="close-modal">Cancel</button>
-              <button type="submit" class="primary-button">Approve Rubric</button>
+              <button type="submit" class="primary-button">${icons.check} Approve Rubric</button>
             </div>
           </form>
         </div>
@@ -838,10 +862,10 @@ function renderBatchUploadModal() {
       <div class="modal-card" style="max-width:720px">
         <div class="modal-header">
           <div>
-            <h2>Batch Upload Setup</h2>
-            <p class="panel-copy">${ui.modal.filePaths.length} files selected. PDFs should usually use <em>Each file is one submission</em>. Loose page images can be grouped by file count.</p>
+            <h2>Batch Upload</h2>
+            <p class="panel-copy">${ui.modal.filePaths.length} files selected. Configure grouping before uploading.</p>
           </div>
-          <button type="button" class="ghost-button" data-action="close-modal">Close</button>
+          <button type="button" class="ghost-button" data-action="close-modal">${icons.x}</button>
         </div>
         <div class="modal-body" data-scroll-key="modal-body">
           <form id="batch-upload-form" class="grid-two">
@@ -865,7 +889,7 @@ function renderBatchUploadModal() {
             <div class="detail-pane" style="grid-column:1 / -1">
               <div class="panel-actions" style="justify-content:flex-end">
                 <button type="button" class="ghost-button" data-action="close-modal">Cancel</button>
-                <button type="submit" class="primary-button">Continue</button>
+                <button type="submit" class="primary-button">${icons.upload} Upload</button>
               </div>
             </div>
           </form>
@@ -883,9 +907,9 @@ function renderDraftReviewModal(session, draft, isExisting) {
         <div class="modal-header">
           <div>
             <h2>${isExisting ? "Review Regrade" : "Review Grade"}</h2>
-            <p class="panel-copy">Desktop review swaps the sequential mobile layout for a two-pane workspace: scans on the left, editable grading detail on the right.</p>
+            <p class="panel-copy">Review scans alongside the grading detail.</p>
           </div>
-          <button type="button" class="ghost-button" data-action="close-modal">Close</button>
+          <button type="button" class="ghost-button" data-action="close-modal">${icons.x}</button>
         </div>
         <div class="modal-body" data-scroll-key="modal-body">
           <form id="review-draft-form">
@@ -902,7 +926,7 @@ function renderDraftReviewModal(session, draft, isExisting) {
             </div>
             <div class="modal-footer">
               <button type="button" class="ghost-button" data-action="close-modal">Cancel</button>
-              <button type="submit" class="primary-button">Save</button>
+              <button type="submit" class="primary-button">${icons.check} Save</button>
             </div>
           </form>
         </div>
@@ -924,9 +948,9 @@ function renderSubmissionDetailModal(session, submissionId) {
           <div class="modal-header">
             <div>
               <h2>${escapeHTML(submission.listDisplayName)}</h2>
-              <p class="panel-copy">Pending and failed submissions stay inspectable even before the final grade exists.</p>
+              <p class="panel-copy">Submission is still processing.</p>
             </div>
-            <button type="button" class="ghost-button" data-action="close-modal">Close</button>
+            <button type="button" class="ghost-button" data-action="close-modal">${icons.x}</button>
           </div>
           <div class="modal-body" data-scroll-key="modal-body">
             <div class="detail-layout">
@@ -956,12 +980,12 @@ function renderSubmissionDetailModal(session, submissionId) {
         <div class="modal-header">
           <div>
             <h2>${escapeHTML(submission.listDisplayName)}</h2>
-            <p class="panel-copy">Saved results remain editable. This mirrors the iOS detail view, but the file viewer is fixed beside the scoring form instead of stacked below it.</p>
+            <p class="panel-copy">${score(submission.totalScore)} / ${score(submission.maxScore)} points</p>
           </div>
           <div class="panel-actions">
-            <button type="button" class="secondary-button" data-action="regrade-submission" data-session-id="${session.id}" data-submission-id="${submission.id}">Regrade</button>
-            <button type="button" class="danger-button" data-action="delete-submission" data-session-id="${session.id}" data-submission-id="${submission.id}">Delete</button>
-            <button type="button" class="ghost-button" data-action="close-modal">Close</button>
+            <button type="button" class="secondary-button" data-action="regrade-submission" data-session-id="${session.id}" data-submission-id="${submission.id}">${icons.refresh} Regrade</button>
+            <button type="button" class="danger-button" data-action="delete-submission" data-session-id="${session.id}" data-submission-id="${submission.id}">${icons.trash} Delete</button>
+            <button type="button" class="ghost-button" data-action="close-modal">${icons.x}</button>
           </div>
         </div>
         <div class="modal-body" data-scroll-key="modal-body">
@@ -979,7 +1003,7 @@ function renderSubmissionDetailModal(session, submissionId) {
             </div>
             <div class="modal-footer">
               <button type="button" class="ghost-button" data-action="close-modal">Close</button>
-              <button type="submit" class="primary-button">Save Changes</button>
+              <button type="submit" class="primary-button">${icons.check} Save Changes</button>
             </div>
           </form>
         </div>
